@@ -1,0 +1,193 @@
+huawei:
+  status:
+    device_status:
+      type: holding
+      address: 32089
+      quantity: 1
+      datatype: u16
+    active_power:
+      type: holding
+      address: 32080
+      quantity: 2
+      datatype: i32
+      scale: 1000
+    meter_active_power:
+      type: holding
+      address: 37113
+      quantity: 2
+      datatype: i32
+      scale: 1
+  control:
+    active_power_percentage_derating:
+      type: holding
+      address: 40125
+      quantity: 1
+      datatype: u16
+      scale: 10
+    startup:
+      type: holding
+      address: 40200
+      quantity: 1
+      datatype: u16
+    shutdown:
+      type: holding
+      address: 40201
+      quantity: 1
+      datatype: u16
+    active_adjustment_block:
+      type: holding
+      address: 35300
+      quantity: 4
+      datatype: u16
+
+pcs:
+  status:
+    alarm_word_1:
+      type: input
+      address: 2100
+      quantity: 1
+      datatype: u16
+    pcs_status_word:
+      type: input
+      address: 2105
+      quantity: 1
+      datatype: u16
+    monitor_alarm_word:
+      type: input
+      address: 2107
+      quantity: 1
+      datatype: u16
+    total_power_meter:
+      type: input
+      address: 2218
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    heartbeat:
+      type: input
+      address: 2219
+      quantity: 1
+      datatype: u16
+    load_active_power:
+      type: input
+      address: 2326
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    load_reactive_power:
+      type: input
+      address: 2327
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    load_apparent_power:
+      type: input
+      address: 2328
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    soc:
+      type: input
+      address: 3099
+      quantity: 1
+      datatype: u16
+    grid_voltage_ab:
+      type: input
+      address: 2428
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    grid_voltage_bc:
+      type: input
+      address: 2429
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    grid_voltage_ca:
+      type: input
+      address: 2430
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+  limits:
+    bms_charge_voltage_limit:
+      type: holding
+      address: 2884
+      quantity: 1
+      datatype: u16
+      scale: 1
+    bms_charge_current_limit:
+      type: holding
+      address: 2886
+      quantity: 1
+      datatype: u16
+      scale: 1
+  control:
+    constant_power_command:
+      type: holding
+      address: 2761
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    grid_connected_mode:
+      type: holding
+      address: 2765
+      quantity: 1
+      datatype: u16
+    power_control_type:
+      type: holding
+      address: 2768
+      quantity: 1
+      datatype: u16
+    remote_on_off:
+      type: holding
+      address: 2769
+      quantity: 1
+      datatype: u16
+    control_mode:
+      type: holding
+      address: 2770
+      quantity: 1
+      datatype: u16
+    charge_power_limit:
+      type: holding
+      address: 2776
+      quantity: 1
+      datatype: u16
+    discharge_power_limit:
+      type: holding
+      address: 2777
+      quantity: 1
+      datatype: u16
+    work_mode:
+      type: holding
+      address: 2778
+      quantity: 1
+      datatype: u16
+    charge_stop_soc:
+      type: holding
+      address: 2783
+      quantity: 1
+      datatype: u16
+    discharge_stop_soc:
+      type: holding
+      address: 2784
+      quantity: 1
+      datatype: u16
+
+ems_server:
+  input_defaults:
+    2218: 150
+    2219: 0
+    2326: 480
+    2327: 0
+    2328: 480
+  holding_defaults:
+    2761: 0
+    2765: 3
+    2768: 2
+    2769: 21845
+    2770: 1
+    2778: 0
+    2783: 98
+    2784: 50

@@ -1,0 +1,92 @@
+title: PIBEMS
+views:
+  - title: EMS
+    path: pibems
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Power Flow
+          - type: markdown
+            content: >-
+              {% set g = states('sensor.pibems_pcs_meter_total_power') | float(0) %}
+              {% set l = states('sensor.pibems_pcs_active_power') | float(0) %}
+              {% set p = states('sensor.pibems_huawei_active_power') | float(0) %}
+              {% set b = states('sensor.pibems_last_written_pcs_power') | float(0) %}
+              {% set soc = states('sensor.pibems_pcs_soc') %}
+              {% set gm = states('sensor.pibems_operation_mode') %}
+              {% if g > 0.2 %}
+              Grid -> Home  ({{ '%.1f'|format(g) }} kW)
+              {% elif g < -0.2 %}
+              Home -> Grid  ({{ '%.1f'|format(g|abs) }} kW)
+              {% else %}
+              Grid <-> Home  (0.0 kW)
+              {% endif %}
+
+              Solar -> PCS  ({{ '%.1f'|format(p) }} kW)
+              PCS -> Loads  ({{ '%.1f'|format(l) }} kW)
+
+              {% if b > 0.2 %}
+              Battery -> PCS (Discharge {{ '%.1f'|format(b) }} kW)
+              {% elif b < -0.2 %}
+              PCS -> Battery (Charge {{ '%.1f'|format(b|abs) }} kW)
+              {% else %}
+              Battery Idle (0.0 kW)
+              {% endif %}
+
+              SOC: {{ soc }}% | Mode: {{ gm }}
+          - type: gauge
+            entity: sensor.pibems_pcs_soc
+            name: Battery SOC
+            min: 0
+            max: 100
+            severity:
+              green: 40
+              yellow: 20
+              red: 0
+      - type: grid
+        cards:
+          - type: heading
+            heading: Live Stats
+          - type: entities
+            entities:
+              - entity: sensor.pibems_huawei_active_power
+                name: Huawei Power
+              - entity: sensor.pibems_pcs_active_power
+                name: Load Active Power
+              - entity: sensor.pibems_pcs_meter_total_power
+                name: Grid Meter Total Power
+              - entity: sensor.pibems_dynamic_charge_limit
+                name: Dynamic Charge Limit
+              - entity: sensor.pibems_bms_charge_voltage_limit
+                name: BMS Charge Voltage Limit
+              - entity: sensor.pibems_bms_charge_current_limit
+                name: BMS Charge Current Limit
+              - entity: sensor.pibems_policy_reason
+                name: Control Policy Reason
+      - type: grid
+        cards:
+          - type: heading
+            heading: Controls
+          - type: entities
+            entities:
+              - entity: input_select.pibems_operation_mode
+              - entity: input_boolean.pibems_auto_mode
+              - entity: input_number.pibems_target_power_kw
+              - entity: input_number.pibems_huawei_derate_percent
+          - type: button
+            name: Push Control Values
+            icon: mdi:send
+            tap_action:
+              action: call-service
+              service: script.pibems_push_controls
+          - type: conditional
+            conditions:
+              - entity: binary_sensor.pibems_grid_available
+                state: "off"
+            card:
+              type: markdown
+              content: >-
+                Grid is down. Outage policy is active.
+                Reserve SOC, no-sun shutdown, and auto-start on return are handled by PIBEMS.

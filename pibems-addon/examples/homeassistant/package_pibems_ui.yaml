@@ -1,0 +1,94 @@
+input_select:
+  pibems_operation_mode:
+    name: PIBEMS Operation Mode
+    options:
+      - control
+      - read_only
+    initial: read_only
+
+input_boolean:
+  pibems_auto_mode:
+    name: PIBEMS Auto Mode
+    initial: true
+
+input_number:
+  pibems_target_power_kw:
+    name: PIBEMS Target Power
+    min: -100
+    max: 100
+    step: 0.5
+    unit_of_measurement: kW
+    mode: slider
+  pibems_huawei_derate_percent:
+    name: PIBEMS Huawei Derate
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: slider
+
+template:
+  - binary_sensor:
+      - name: PIBEMS Grid Available
+        unique_id: pibems_grid_available_binary
+        state: "{{ states('sensor.pibems_grid_available') | int(0) == 1 }}"
+      - name: PIBEMS Auto Mode Enabled
+        unique_id: pibems_auto_mode_enabled_binary
+        state: "{{ states('sensor.pibems_auto_mode') | int(0) == 1 }}"
+  - sensor:
+      - name: PIBEMS Grid Power Direction
+        unique_id: pibems_grid_power_direction
+        state: >-
+          {% set p = states('sensor.pibems_pcs_meter_total_power') | float(0) %}
+          {% if p > 0.2 %}
+            import
+          {% elif p < -0.2 %}
+            export
+          {% else %}
+            neutral
+          {% endif %}
+      - name: PIBEMS Battery Power Direction
+        unique_id: pibems_battery_power_direction
+        state: >-
+          {% set p = states('sensor.pibems_last_written_pcs_power') | float(0) %}
+          {% if p > 0.2 %}
+            discharge
+          {% elif p < -0.2 %}
+            charge
+          {% else %}
+            idle
+          {% endif %}
+      - name: PIBEMS Flow Text
+        unique_id: pibems_flow_text
+        state: >-
+          {% set grid = states('sensor.pibems_pcs_meter_total_power') | float(0) %}
+          {% set load = states('sensor.pibems_pcs_active_power') | float(0) %}
+          {% set pv = states('sensor.pibems_huawei_active_power') | float(0) %}
+          {% set bat = states('sensor.pibems_last_written_pcs_power') | float(0) %}
+          Grid {{ '%.1f'|format(grid) }} kW | PV {{ '%.1f'|format(pv) }} kW | Load {{ '%.1f'|format(load) }} kW | Battery {{ '%.1f'|format(bat) }} kW
+
+script:
+  pibems_push_controls:
+    alias: PIBEMS Push Controls
+    mode: restart
+    sequence:
+      - service: rest_command.pibems_set_control
+        data:
+          target_power_kw: "{{ states('input_number.pibems_target_power_kw') | float(0) }}"
+          huawei_derate_percent: "{{ states('input_number.pibems_huawei_derate_percent') | float(100) }}"
+          auto_mode_enabled: "{{ is_state('input_boolean.pibems_auto_mode', 'on') }}"
+          operation_mode: "{{ states('input_select.pibems_operation_mode') }}"
+
+automation:
+  - id: pibems_auto_push_controls
+    alias: PIBEMS Auto Push Controls
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - input_number.pibems_target_power_kw
+          - input_number.pibems_huawei_derate_percent
+          - input_select.pibems_operation_mode
+          - input_boolean.pibems_auto_mode
+    action:
+      - service: script.pibems_push_controls

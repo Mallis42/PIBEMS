@@ -1,0 +1,44 @@
+name: Validate Add-on Structure
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required repository files
+        run: |
+          test -f repository.yaml
+          test -f pibems-addon/config.yaml
+          test -f pibems-addon/Dockerfile
+          test -f pibems-addon/requirements.txt
+          test -f pibems-addon/app/main.py
+
+      - name: Install Python deps for validation
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Validate YAML syntax
+        run: |
+          python - << 'PY'
+          import pathlib
+          import yaml
+          files = [
+              pathlib.Path('repository.yaml'),
+              pathlib.Path('pibems-addon/config.yaml'),
+              pathlib.Path('pibems-addon/config/register_map.yaml'),
+              pathlib.Path('pibems-addon/examples/homeassistant/rest.yaml'),
+              pathlib.Path('pibems-addon/examples/homeassistant/package_pibems_ui.yaml'),
+              pathlib.Path('pibems-addon/examples/homeassistant/dashboard_pibems.yaml'),
+          ]
+          for f in files:
+              with f.open('r', encoding='utf-8') as h:
+                  yaml.safe_load(h)
+          print('YAML validation passed')
+          PY

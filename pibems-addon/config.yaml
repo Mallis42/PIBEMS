@@ -1,0 +1,100 @@
+name: PIBEMS
+version: 0.1.0
+slug: pibems
+description: Open-source EMS for Huawei + Megarevo PCS
+url: https://github.com/YOUR_GITHUB_USERNAME/pibems-ha-addons
+icon: mdi:transmission-tower-import
+panel_icon: mdi:battery-charging-medium
+arch:
+  - aarch64
+  - amd64
+  - armv7
+  - i386
+startup: services
+boot: auto
+init: false
+host_network: true
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: PIBEMS diagnostics API
+options:
+  huawei_host: 192.168.1.20
+  huawei_port: 502
+  huawei_unit_id: 1
+  huawei_address_offset: 0
+  huawei_max_power_kw: 50.0
+  pcs_host: 192.168.1.30
+  pcs_port: 502
+  pcs_unit_id: 1
+  pcs_address_offset: 0
+  ems_bind_host: 0.0.0.0
+  ems_bind_port: 1502
+  ems_unit_id: 1
+  api_bind_host: 0.0.0.0
+  api_bind_port: 8080
+  enable_huawei: true
+  enable_pcs_direct: true
+  enable_ems_server: true
+  poll_interval_sec: 1.0
+  control_interval_sec: 1.0
+  heartbeat_interval_sec: 1.0
+  target_power_kw: 0.0
+  huawei_derate_percent: 100.0
+  max_charge_kw: 50.0
+  max_discharge_kw: 50.0
+  min_soc: 15
+  max_soc: 95
+  operation_mode: control
+  grid_voltage_present_threshold_v: 180.0
+  outage_reserve_soc: 25
+  outage_max_soc_from_huawei: 85
+  outage_shutdown_soc_no_sun: 15
+  solar_present_threshold_kw: 1.0
+  charge_from_grid_on_return: true
+  auto_start_on_grid_return: true
+  dynamic_charge_limit_enable: true
+  dynamic_charge_limit_margin: 0.9
+  pcs_start_command: 21845
+  pcs_stop_command: 43690
+  register_map_file: /app/config/register_map.yaml
+schema:
+  huawei_host: str
+  huawei_port: port
+  huawei_unit_id: int(1,255)
+  huawei_address_offset: int(-20000,20000)
+  huawei_max_power_kw: float(0,100000)
+  pcs_host: str
+  pcs_port: port
+  pcs_unit_id: int(1,255)
+  pcs_address_offset: int(-20000,20000)
+  ems_bind_host: str
+  ems_bind_port: port
+  ems_unit_id: int(1,255)
+  api_bind_host: str
+  api_bind_port: port
+  enable_huawei: bool
+  enable_pcs_direct: bool
+  enable_ems_server: bool
+  poll_interval_sec: float(0.2,60)
+  control_interval_sec: float(0.2,60)
+  heartbeat_interval_sec: float(0.2,10)
+  target_power_kw: float(-100000,100000)
+  huawei_derate_percent: float(0,100)
+  max_charge_kw: float(0,100000)
+  max_discharge_kw: float(0,100000)
+  min_soc: int(0,100)
+  max_soc: int(0,100)
+  operation_mode: list(control|read_only)
+  grid_voltage_present_threshold_v: float(0,1000)
+  outage_reserve_soc: int(0,100)
+  outage_max_soc_from_huawei: int(0,100)
+  outage_shutdown_soc_no_sun: int(0,100)
+  solar_present_threshold_kw: float(0,100000)
+  charge_from_grid_on_return: bool
+  auto_start_on_grid_return: bool
+  dynamic_charge_limit_enable: bool
+  dynamic_charge_limit_margin: float(0.1,1.0)
+  pcs_start_command: int(0,65535)
+  pcs_stop_command: int(0,65535)
+  register_map_file: str

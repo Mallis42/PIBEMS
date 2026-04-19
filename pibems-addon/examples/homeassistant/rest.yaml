@@ -1,0 +1,62 @@
+rest:
+  - resource: http://127.0.0.1:8080/api/diagnostics
+    scan_interval: 2
+    sensor:
+      - name: PIBEMS PCS SOC
+        unique_id: pibems_pcs_soc
+        value_template: "{{ value_json.pcs.soc | default(0) }}"
+        unit_of_measurement: "%"
+      - name: PIBEMS PCS Active Power
+        unique_id: pibems_pcs_load_active_kw
+        value_template: "{{ value_json.pcs.load_active_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS PCS Meter Total Power
+        unique_id: pibems_pcs_meter_total_power_kw
+        value_template: "{{ value_json.pcs.total_power_meter_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Huawei Active Power
+        unique_id: pibems_huawei_active_kw
+        value_template: "{{ value_json.huawei.active_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS EMS Comm Failure
+        unique_id: pibems_ems_comm_failure
+        value_template: "{{ 1 if value_json.pcs.ems_comm_failure else 0 }}"
+      - name: PIBEMS Grid Available
+        unique_id: pibems_grid_available
+        value_template: "{{ 1 if value_json.grid.is_available else 0 }}"
+      - name: PIBEMS BMS Charge Current Limit
+        unique_id: pibems_bms_charge_current_limit
+        value_template: "{{ value_json.pcs.bms_charge_current_limit_a | default(0) }}"
+        unit_of_measurement: "A"
+      - name: PIBEMS BMS Charge Voltage Limit
+        unique_id: pibems_bms_charge_voltage_limit
+        value_template: "{{ value_json.pcs.bms_charge_voltage_limit_v | default(0) }}"
+        unit_of_measurement: "V"
+      - name: PIBEMS Dynamic Charge Limit
+        unique_id: pibems_dynamic_charge_limit_kw
+        value_template: "{{ value_json.control.dynamic_charge_limit_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Policy Reason
+        unique_id: pibems_policy_reason
+        value_template: "{{ value_json.control.policy_reason | default('unknown') }}"
+      - name: PIBEMS Operation Mode
+        unique_id: pibems_operation_mode
+        value_template: "{{ value_json.control.operation_mode | default('control') }}"
+      - name: PIBEMS Effective Target Power
+        unique_id: pibems_effective_target_power_kw
+        value_template: "{{ value_json.control.effective_target_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Last Written PCS Power
+        unique_id: pibems_last_written_pcs_power_kw
+        value_template: "{{ value_json.control.last_written_pcs_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Auto Mode
+        unique_id: pibems_auto_mode
+        value_template: "{{ 1 if value_json.control.auto_mode_enabled else 0 }}"
+
+rest_command:
+  pibems_set_control:
+    url: http://127.0.0.1:8080/api/control
+    method: POST
+    content_type: "application/json"
+    payload: '{"target_power_kw": {{ target_power_kw }}, "huawei_derate_percent": {{ huawei_derate_percent }}, "auto_mode_enabled": {{ auto_mode_enabled | lower }}, "operation_mode": "{{ operation_mode }}"}'
