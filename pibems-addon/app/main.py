@@ -20,23 +20,37 @@ _PURPLE = "\033[95m"
 _RESET  = "\033[0m"
 
 _HUAWEI_STATUS_MAP: dict[int, str] = {
-    0: "Standby",
-    1: "Standby: insulation check",
-    2: "Standby: irradiation check",
-    3: "Standby: grid check",
-    256: "Starting",
-    512: "On-grid",
-    513: "On-grid: power-limited",
-    514: "On-grid: self-derating",
-    768: "Shutdown: fault",
-    769: "Shutdown: command",
-    770: "Shutdown: OVGR",
-    1025: "Shutdown: no irradiation",
-    1536: "Spot-check ready",
-    1792: "Spot-checking",
-    2048: "Inspecting",
-    2304: "AFCI self-check",
-    40960: "On-grid",
+    0x0000: "Standby: initializing",
+    0x0001: "Standby: detecting insulation resistance",
+    0x0002: "Standby: detecting irradiation",
+    0x0003: "Standby: grid detecting",
+    0x0100: "Starting",
+    0x0200: "On-grid (running)",
+    0x0201: "Grid connection: power limited",
+    0x0202: "Grid connection: self-derating",
+    0x0203: "Off-grid running",
+    0x0300: "Shutdown: fault",
+    0x0301: "Shutdown: command",
+    0x0302: "Shutdown: OVGR",
+    0x0303: "Shutdown: communication disconnected",
+    0x0304: "Shutdown: power limited",
+    0x0305: "Shutdown: manual startup required",
+    0x0306: "Shutdown: DC switches disconnected",
+    0x0307: "Shutdown: rapid cutoff",
+    0x0308: "Shutdown: input under-power",
+    0x0401: "Grid scheduling: cosphi-P curve",
+    0x0402: "Grid scheduling: Q-U curve",
+    0x0403: "Grid scheduling: PF-U curve",
+    0x0404: "Grid scheduling: dry contact",
+    0x0405: "Grid scheduling: Q-P curve",
+    0x0500: "Spot-check ready",
+    0x0501: "Spot-checking",
+    0x0600: "Inspecting",
+    0x0700: "AFCI self-check",
+    0x0800: "I-V scanning",
+    0x0900: "DC input detection",
+    0x0A00: "Running: off-grid charging",
+    0xA000: "Standby: no irradiation",
 }
 
 
@@ -436,6 +450,7 @@ class EMSService:
                     stat_row("Connection", indicator(bool(status.get("huawei_connected")), "Connected" if status.get("huawei_connected") else "Disconnected")),
                     stat_row("Status", esc(fmt(huawei.get("device_status_text") or huawei.get("device_status")))),
                     stat_row("Active Power", esc(fmt(huawei.get("active_power_kw"), " kW"))),
+                    stat_row("PV Target", esc(fmt(huawei.get("pv_target_value")))),
                     stat_row("Derate %", esc(fmt(control.get("huawei_derate_percent"), "%"))),
                 ],
                 status.get("huawei_last_error"),
@@ -843,11 +858,13 @@ class EMSService:
             status = await self._read_u16(self.huawei_client, points["device_status"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
             pwr = await self._read_i32(self.huawei_client, points["active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
             meter = await self._read_i32(self.huawei_client, points["meter_active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
+            pv_target = await self._read_u16(self.huawei_client, points["pv_target_value"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
 
             self.state["huawei"]["device_status"] = status
             self.state["huawei"]["device_status_text"] = f"{self._decode_huawei_status(status)} ({status})"
             self.state["huawei"]["active_power_kw"] = pwr / 1000.0
             self.state["huawei"]["meter_active_power_w"] = meter
+            self.state["huawei"]["pv_target_value"] = pv_target
             self.state["status"]["huawei_connected"] = True
             self.state["status"]["huawei_last_error"] = None
         except Exception as exc:  # noqa: BLE001

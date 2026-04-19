@@ -5,6 +5,11 @@ huawei:
       address: 32089
       quantity: 1
       datatype: u16
+    pv_target_value:
+      type: holding
+      address: 40120
+      quantity: 1
+      datatype: u16
     active_power:
       type: holding
       address: 32080
