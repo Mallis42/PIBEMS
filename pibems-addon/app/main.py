@@ -16,29 +16,30 @@ from pymodbus.server import StartAsyncTcpServer
 
 
 class _LoggingSlaveContext(ModbusSlaveContext):
-    """Wraps ModbusSlaveContext to log every read/write the PCS makes."""
+    """Wraps ModbusSlaveContext to log every read/write the PCS makes via Modbus TCP.
 
-    _FC_NAMES = {
-        1: "ReadCoils", 2: "ReadDiscreteInputs",
-        3: "ReadHoldingRegs", 4: "ReadInputRegs",
-        5: "WriteCoil", 6: "WriteHoldingReg",
-        15: "WriteMultipleCoils", 16: "WriteMultipleRegs",
-    }
+    Internal writes (our own heartbeat/control loop calling setValues directly) are
+    logged at DEBUG so they don't flood the log.  Reads triggered by an external client
+    (i.e. the PCS polling the EMS server) are logged at INFO so they stand out clearly.
+    """
+
+    # Maps pymodbus internal register-type codes to human names.
+    _REG_NAMES = {1: "Coil", 2: "DiscreteInput", 3: "HoldingReg", 4: "InputReg"}
 
     def getValues(self, fc_as_hex: int, address: int, count: int = 1) -> list:
         values = super().getValues(fc_as_hex, address, count)
-        fc_name = self._FC_NAMES.get(fc_as_hex, f"FC{fc_as_hex}")
-        _LOG.info(
-            "EMS-SERVER RX  %s  addr=%s count=%s  -> %s",
-            fc_name, address, count, values,
+        reg = self._REG_NAMES.get(fc_as_hex, f"reg{fc_as_hex}")
+        logging.getLogger("pibems").info(
+            "EMS-SERVER  PCS-READ   %s  addr=%s count=%s  -> %s",
+            reg, address, count, values,
         )
         return values
 
-    def setValues(self, fc_as_hex: int, address: int, values: list) -> None:  # type: ignore[override]
-        fc_name = self._FC_NAMES.get(fc_as_hex, f"FC{fc_as_hex}")
-        _LOG.info(
-            "EMS-SERVER WX  %s  addr=%s  values=%s",
-            fc_name, address, values,
+    def setValues(self, fc_as_hex: int, address: int, values: list) -> None:  # type: ignore[override]  
+        reg = self._REG_NAMES.get(fc_as_hex, f"reg{fc_as_hex}")
+        logging.getLogger("pibems").debug(
+            "EMS-SERVER  INTERNAL-WRITE  %s  addr=%s  values=%s",
+            reg, address, values,
         )
         super().setValues(fc_as_hex, address, values)
 
