@@ -1,4 +1,5 @@
 import asyncio
+import html
 import json
 import logging
 import signal
@@ -334,126 +335,247 @@ class EMSService:
         }
 
     def _get_ui_html(self) -> str:
-        return """<!DOCTYPE html>
+        def esc(value: Any) -> str:
+            return html.escape(str(value), quote=True)
+
+        def fmt(value: Any, suffix: str = "") -> str:
+            if value is None:
+                return f"-{suffix}"
+            if isinstance(value, float):
+                return f"{value:.2f}{suffix}"
+            return f"{value}{suffix}"
+
+        def indicator(connected: bool, text: str) -> str:
+            cls = "connected" if connected else "disconnected"
+            return f'<span><span class="status-indicator {cls}"></span>{esc(text)}</span>'
+
+        def stat_row(label: str, value: str) -> str:
+            return (
+                '<div class="stat-row">'
+                f'<span class="stat-label">{esc(label)}:</span>'
+                f'<span class="stat-value">{value}</span>'
+                '</div>'
+            )
+
+        def card(title: str, rows: list[str], error_text: str | None = None, full: bool = False) -> str:
+            full_class = " full" if full else ""
+            error_html = f'<div class="error-msg">{esc(error_text)}</div>' if error_text else ""
+            return (
+                f'<div class="card{full_class}">'
+                f'<h2>{esc(title)}</h2>'
+                + "".join(rows)
+                + error_html
+                + '</div>'
+            )
+
+        def address_lines(entries: list[dict[str, Any]]) -> list[str]:
+            lines: list[str] = []
+            for entry in entries:
+                address = int(entry.get("address", 0))
+                label = str(entry.get("label", ""))
+                value = entry.get("value")
+                raw = "-" if value is None else str(value)
+                lines.append(f"{address:<6} = {raw:<8} {label}")
+            return lines
+
+        status = self.state.get("status", {})
+        huawei = self.state.get("huawei", {})
+        pcs = self.state.get("pcs", {})
+        control = self.state.get("control", {})
+        server = self.state.get("server", {})
+        grid = self.state.get("grid", {})
+        probe = self.state.get("pcs_direct_probe", {})
+        now = datetime.now().strftime("%H:%M:%S")
+
+        debug_json = esc(json.dumps(self.state, indent=2, default=str))
+        address_view = server.get("address_view", {}) if isinstance(server, dict) else {}
+        address_text = "\n".join(
+            ["INPUT REGISTERS"]
+            + address_lines(address_view.get("input", []))
+            + ["", "HOLDING REGISTERS"]
+            + address_lines(address_view.get("holding", []))
+            + [
+                "",
+                f"READ COUNTS: input={server.get('input_read_count', 0)} holding={server.get('holding_read_count', 0)} writes={server.get('write_count', 0)}",
+                f"LAST HOLDING READ: {server.get('last_holding_read')}",
+                f"LAST INPUT READ: {server.get('last_input_read')}",
+                f"LAST WRITE: {server.get('last_write')}",
+                f"DIRECT PROBE LAST OK: {probe.get('last_ok')}",
+                f"DIRECT PROBE LAST HEARTBEAT: {probe.get('last_heartbeat')}",
+                f"DIRECT PROBE LAST ERROR: {probe.get('last_error')}",
+            ]
+        )
+
+        cards = [
+            card(
+                "Huawei Inverter",
+                [
+                    stat_row("Connection", indicator(bool(status.get("huawei_connected")), "Connected" if status.get("huawei_connected") else "Disconnected")),
+                    stat_row("Status", esc(fmt(huawei.get("device_status")))),
+                    stat_row("Active Power", esc(fmt(huawei.get("active_power_kw"), " kW"))),
+                    stat_row("Derate %", esc(fmt(control.get("huawei_derate_percent"), "%"))),
+                ],
+                status.get("huawei_last_error"),
+            ),
+            card(
+                "PCS Battery",
+                [
+                    stat_row("Connection", indicator(bool(status.get("pcs_connected")), "Connected" if status.get("pcs_connected") else "Disconnected")),
+                    stat_row("SOC", esc(fmt(pcs.get("soc"), " %"))),
+                    stat_row("Active Power", esc(fmt(pcs.get("load_active_power_kw"), " kW"))),
+                    stat_row("Grid Power", esc(fmt(pcs.get("total_power_meter_kw"), " kW"))),
+                ],
+                status.get("pcs_last_error"),
+            ),
+            card(
+                "Grid Status",
+                [
+                    stat_row("Available", indicator(bool(grid.get("is_available")), "Online" if grid.get("is_available") else "Offline")),
+                    stat_row("Avg Voltage", esc(fmt(grid.get("avg_voltage_v"), " V"))),
+                    stat_row("EMS Comm Fail", esc("Yes" if pcs.get("ems_comm_failure") else "No" if pcs.get("ems_comm_failure") is not None else "-")),
+                    stat_row("Operation Mode", esc(fmt(control.get("operation_mode")))),
+                ],
+            ),
+            card(
+                "Control Settings",
+                [
+                    stat_row("Target Power", esc(fmt(control.get("target_power_kw"), " kW"))),
+                    stat_row("Effective Power", esc(fmt(control.get("effective_target_power_kw"), " kW"))),
+                    stat_row("Dynamic Charge Limit", esc(fmt(control.get("dynamic_charge_limit_kw"), " kW"))),
+                    stat_row("Policy Reason", esc(fmt(control.get("policy_reason")))),
+                ],
+            ),
+            card(
+                "Battery Limits",
+                [
+                    stat_row("Charge V Limit", esc(fmt(pcs.get("bms_charge_voltage_limit_v"), " V"))),
+                    stat_row("Charge I Limit", esc(fmt(pcs.get("bms_charge_current_limit_a"), " A"))),
+                    stat_row("Auto Mode", esc("Enabled" if control.get("auto_mode_enabled") else "Disabled")),
+                ],
+            ),
+            card(
+                "EMS Modbus Server",
+                [
+                    stat_row("Enabled", esc("Yes" if server.get("enabled") else "No")),
+                    stat_row("Status", indicator(bool(server.get("running")), "Running" if server.get("running") else "Stopped")),
+                    stat_row("Port", esc(fmt(server.get("port")))),
+                    stat_row("Unit ID", esc(fmt(server.get("unit_id")))),
+                    stat_row("Clients", esc(fmt(server.get("connected_clients")))),
+                ],
+            ),
+            card(
+                "PCS Direct Probe",
+                [
+                    stat_row("Enabled", esc("Yes" if probe.get("enabled") else "No")),
+                    stat_row("Last OK", esc(fmt(probe.get("last_ok")))),
+                    stat_row("Last Heartbeat", esc(fmt(probe.get("last_heartbeat")))),
+                    stat_row("Last Error", esc(fmt(probe.get("last_error")))),
+                ],
+            ),
+            card("Raw Diagnostics JSON", [f'<div class="debug-panel">{debug_json}</div>'], full=True),
+            card("EMS Address Viewer", [f'<div class="debug-panel">{esc(address_text)}</div>'], full=True),
+        ]
+
+        return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="3">
     <title>PIBEMS Dashboard</title>
     <style>
-        * {
+        * {{
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-        }
-        body {
+        }}
+        body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             min-height: 100vh;
             padding: 20px;
             color: #333;
-        }
-        .container {
+        }}
+        .container {{
             max-width: 1200px;
             margin: 0 auto;
-        }
-        h1 {
+        }}
+        h1 {{
             color: white;
-            margin-bottom: 30px;
+            margin-bottom: 18px;
             text-align: center;
             font-size: 2.5em;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-        .tabs {
-            display: flex;
-            gap: 10px;
+        }}
+        .refresh-note {{
+            text-align: center;
+            color: rgba(255,255,255,0.9);
             margin-bottom: 20px;
-            justify-content: center;
-        }
-        .tab-btn {
-            padding: 10px 20px;
-            border: none;
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 15px;
-            transition: all 0.3s;
-            font-weight: 500;
-        }
-        .tab-btn.active {
-            background: white;
-            color: #2a5298;
-        }
-        .tab-btn:hover {
-            background: rgba(255,255,255,0.3);
-        }
-        .content {
+        }}
+        .content {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
             margin-bottom: 20px;
-        }
-        .card {
+        }}
+        .card {{
             background: white;
             border-radius: 10px;
             padding: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            display: none;
-        }
-        .card.active {
-            display: block;
-        }
-        .card.full {
+        }}
+        .card.full {{
             grid-column: 1 / -1;
-        }
-        .card h2 {
+        }}
+        .card h2 {{
             font-size: 1.3em;
             margin-bottom: 15px;
             color: #2a5298;
             border-bottom: 2px solid #2a5298;
             padding-bottom: 10px;
-        }
-        .status-indicator {
+        }}
+        .status-indicator {{
             display: inline-block;
             width: 12px;
             height: 12px;
             border-radius: 50%;
             margin-right: 8px;
             vertical-align: middle;
-        }
-        .status-indicator.connected {
+        }}
+        .status-indicator.connected {{
             background: #4CAF50;
             box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
-        }
-        .status-indicator.disconnected {
+        }}
+        .status-indicator.disconnected {{
             background: #f44336;
             box-shadow: 0 0 10px rgba(244, 67, 54, 0.5);
-        }
-        .stat-row {
+        }}
+        .stat-row {{
             display: flex;
             justify-content: space-between;
+            gap: 16px;
             padding: 10px 0;
             border-bottom: 1px solid #eee;
-        }
-        .stat-row:last-child {
+        }}
+        .stat-row:last-child {{
             border-bottom: none;
-        }
-        .stat-label {
+        }}
+        .stat-label {{
             font-weight: 600;
             color: #666;
-        }
-        .stat-value {
+        }}
+        .stat-value {{
             color: #2a5298;
             font-weight: 500;
             font-family: 'Courier New', monospace;
-        }
-        .error-msg {
+            text-align: right;
+        }}
+        .error-msg {{
             color: #f44336;
             font-size: 0.9em;
-            margin-top: 5px;
-        }
-        .debug-panel {
+            margin-top: 8px;
+        }}
+        .debug-panel {{
             background: #1e1e1e;
             color: #d4d4d4;
             padding: 15px;
@@ -464,330 +586,32 @@ class EMSService:
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-word;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .last-update {
+        }}
+        .last-update {{
             text-align: center;
-            font-size: 0.85em;
-            color: #999;
-            margin-top: 10px;
-        }
-        .grid-3 {
-            grid-template-columns: repeat(3, 1fr) !important;
-        }
-        @media (max-width: 768px) {
-            .content {
+            font-size: 0.9em;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 20px;
+        }}
+        @media (max-width: 768px) {{
+            .content {{
                 grid-template-columns: 1fr;
-            }
-            .grid-3 {
-                grid-template-columns: 1fr !important;
-            }
-            h1 {
+            }}
+            h1 {{
                 font-size: 1.8em;
-            }
-        }
+            }}
+        }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>⚡ PIBEMS Dashboard</h1>
-        
-        <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('status', this)">Status</button>
-            <button class="tab-btn" onclick="showTab('debug', this)">Debug</button>
-        </div>
-
-        <div id="status" class="tab-content active">
-            <div class="content grid-3">
-                <div class="card active">
-                    <h2>🔌 Huawei Inverter</h2>
-                    <div class="stat-row">
-                        <span class="stat-label">Connection:</span>
-                        <span><span id="huawei-status" class="status-indicator disconnected"></span><span id="huawei-status-text">Disconnected</span></span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Status:</span>
-                        <span class="stat-value" id="huawei-device-status">-</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Active Power:</span>
-                        <span class="stat-value" id="huawei-power">- kW</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Derate %:</span>
-                        <span class="stat-value" id="huawei-derate">-</span>
-                    </div>
-                    <div id="huawei-error" class="error-msg"></div>
-                </div>
-
-                <div class="card active">
-                    <h2>🔋 PCS Battery</h2>
-                    <div class="stat-row">
-                        <span class="stat-label">Connection:</span>
-                        <span><span id="pcs-status" class="status-indicator disconnected"></span><span id="pcs-status-text">Disconnected</span></span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">SOC:</span>
-                        <span class="stat-value" id="pcs-soc">- %</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Active Power:</span>
-                        <span class="stat-value" id="pcs-power">- kW</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Grid Power:</span>
-                        <span class="stat-value" id="pcs-meter-power">- kW</span>
-                    </div>
-                    <div id="pcs-error" class="error-msg"></div>
-                </div>
-
-                <div class="card active">
-                    <h2>🌐 Grid Status</h2>
-                    <div class="stat-row">
-                        <span class="stat-label">Available:</span>
-                        <span><span id="grid-status" class="status-indicator disconnected"></span><span id="grid-status-text">Offline</span></span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Avg Voltage:</span>
-                        <span class="stat-value" id="grid-voltage">- V</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">EMS Comm Fail:</span>
-                        <span class="stat-value" id="ems-comm-fail">-</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Operation Mode:</span>
-                        <span class="stat-value" id="operation-mode">-</span>
-                    </div>
-                </div>
-
-                <div class="card active">
-                    <h2>📊 Control Settings</h2>
-                    <div class="stat-row">
-                        <span class="stat-label">Target Power:</span>
-                        <span class="stat-value" id="target-power">- kW</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Effective Power:</span>
-                        <span class="stat-value" id="effective-power">- kW</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Dynamic Charge Limit:</span>
-                        <span class="stat-value" id="charge-limit">- kW</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Policy Reason:</span>
-                        <span class="stat-value" id="policy-reason">-</span>
-                    </div>
-                </div>
-
-                <div class="card active">
-                    <h2>⚙️ Battery Limits</h2>
-                    <div class="stat-row">
-                        <span class="stat-label">Charge V Limit:</span>
-                        <span class="stat-value" id="bms-charge-voltage">- V</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Charge I Limit:</span>
-                        <span class="stat-value" id="bms-charge-current">- A</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Auto Mode:</span>
-                        <span class="stat-value" id="auto-mode">-</span>
-                    </div>
-                </div>
-
-                <div class="card active">
-                    <h2>🖧 EMS Modbus Server</h2>
-                    <div class="stat-row">
-                        <span class="stat-label">Enabled:</span>
-                        <span class="stat-value" id="ems-srv-enabled">-</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Status:</span>
-                        <span><span id="ems-srv-status" class="status-indicator disconnected"></span><span id="ems-srv-status-text">-</span></span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Port:</span>
-                        <span class="stat-value" id="ems-srv-port">-</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Unit ID:</span>
-                        <span class="stat-value" id="ems-srv-unit">-</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Clients:</span>
-                        <span class="stat-value" id="ems-srv-clients">-</span>
-                    </div>
-                </div>
-            </div>
-            <div class="card full active">
-                <div class="last-update">Last update: <span id="last-update">Never</span></div>
-            </div>
-        </div>
-
-        <div id="debug" class="tab-content">
-            <div class="card full active">
-                <h2>🐞 Raw Diagnostics JSON</h2>
-                <div class="debug-panel" id="debug-panel">Loading...</div>
-                <div class="last-update">Last update: <span id="debug-update">Never</span></div>
-            </div>
-            <div class="card full active">
-                <h2>🧭 EMS Address Viewer</h2>
-                <div class="debug-panel" id="ems-address-viewer">Loading...</div>
-            </div>
+        <h1>PIBEMS Dashboard</h1>
+        <div class="refresh-note">Server-rendered view. Auto-refresh every 3 seconds.</div>
+        <div class="last-update">Last update: {esc(now)}</div>
+        <div class="content">
+            {''.join(cards)}
         </div>
     </div>
-
-    <script>
-        function showTab(tabName, btn) {
-            var tabContents = document.querySelectorAll('.tab-content');
-            var tabButtons = document.querySelectorAll('.tab-btn');
-            var i;
-            for (i = 0; i < tabContents.length; i += 1) {
-                tabContents[i].classList.remove('active');
-            }
-            for (i = 0; i < tabButtons.length; i += 1) {
-                tabButtons[i].classList.remove('active');
-            }
-            document.getElementById(tabName).classList.add('active');
-            btn.classList.add('active');
-        }
-
-        function formatValue(val) {
-            if (val === null || val === undefined) return '-';
-            if (typeof val === 'number') return val.toFixed(2);
-            return String(val);
-        }
-
-        function padRight(value, width) {
-            var text = String(value);
-            if (text.length >= width) return text;
-            var padded = text;
-            while (padded.length < width) {
-                padded += ' ';
-            }
-            return padded;
-        }
-
-        function formatAddressViewer(server) {
-            var view = server.address_view || {};
-            var lines = [];
-            var inputEntries = view.input || [];
-            var holdingEntries = view.holding || [];
-            var i;
-            lines.push('INPUT REGISTERS');
-            for (i = 0; i < inputEntries.length; i += 1) {
-                var inputEntry = inputEntries[i];
-                var inputValue = (inputEntry.value === null || inputEntry.value === undefined) ? '-' : String(inputEntry.value);
-                lines.push(padRight(inputEntry.address, 6) + ' = ' + padRight(inputValue, 8) + ' ' + inputEntry.label);
-            }
-            lines.push('');
-            lines.push('HOLDING REGISTERS');
-            for (i = 0; i < holdingEntries.length; i += 1) {
-                var holdingEntry = holdingEntries[i];
-                var holdingValue = (holdingEntry.value === null || holdingEntry.value === undefined) ? '-' : String(holdingEntry.value);
-                lines.push(padRight(holdingEntry.address, 6) + ' = ' + padRight(holdingValue, 8) + ' ' + holdingEntry.label);
-            }
-            lines.push('');
-            var inputReadCount = (server.input_read_count === null || server.input_read_count === undefined) ? 0 : server.input_read_count;
-            var holdingReadCount = (server.holding_read_count === null || server.holding_read_count === undefined) ? 0 : server.holding_read_count;
-            var writeCount = (server.write_count === null || server.write_count === undefined) ? 0 : server.write_count;
-            lines.push('READ COUNTS: input=' + String(inputReadCount) + ' holding=' + String(holdingReadCount) + ' writes=' + String(writeCount));
-            if (server.last_holding_read) {
-                lines.push('LAST HOLDING READ: addr=' + String(server.last_holding_read.address) + ' values=' + JSON.stringify(server.last_holding_read.values));
-            }
-            if (server.last_input_read) {
-                lines.push('LAST INPUT READ: addr=' + String(server.last_input_read.address) + ' values=' + JSON.stringify(server.last_input_read.values));
-            }
-            if (server.last_write) {
-                lines.push('LAST WRITE: addr=' + String(server.last_write.address) + ' values=' + JSON.stringify(server.last_write.values));
-            }
-            return lines.join('\n');
-        }
-
-        function applyDashboardData(data) {
-            var now = new Date().toLocaleTimeString();
-            var hwConn = data.status.huawei_connected;
-            var pcsConn = data.status.pcs_connected;
-            var gridAvail = data.grid.is_available;
-            var srv = data.server || {};
-            var srvRunning = srv.running === true;
-
-            document.getElementById('huawei-status').className = 'status-indicator ' + (hwConn ? 'connected' : 'disconnected');
-            document.getElementById('huawei-status-text').textContent = hwConn ? 'Connected' : 'Disconnected';
-            document.getElementById('huawei-device-status').textContent = formatValue(data.huawei.device_status);
-            document.getElementById('huawei-power').textContent = formatValue(data.huawei.active_power_kw) + ' kW';
-            document.getElementById('huawei-derate').textContent = formatValue(data.control.huawei_derate_percent) + '%';
-            document.getElementById('huawei-error').textContent = data.status.huawei_last_error ? '⚠️ ' + data.status.huawei_last_error : '';
-
-            document.getElementById('pcs-status').className = 'status-indicator ' + (pcsConn ? 'connected' : 'disconnected');
-            document.getElementById('pcs-status-text').textContent = pcsConn ? 'Connected' : 'Disconnected';
-            document.getElementById('pcs-soc').textContent = formatValue(data.pcs.soc) + ' %';
-            document.getElementById('pcs-power').textContent = formatValue(data.pcs.load_active_power_kw) + ' kW';
-            document.getElementById('pcs-meter-power').textContent = formatValue(data.pcs.total_power_meter_kw) + ' kW';
-            document.getElementById('pcs-error').textContent = data.status.pcs_last_error ? '⚠️ ' + data.status.pcs_last_error : '';
-
-            document.getElementById('grid-status').className = 'status-indicator ' + (gridAvail ? 'connected' : 'disconnected');
-            document.getElementById('grid-status-text').textContent = gridAvail ? 'Online' : 'Offline';
-            document.getElementById('grid-voltage').textContent = formatValue(data.grid.avg_voltage_v) + ' V';
-            document.getElementById('ems-comm-fail').textContent = data.pcs.ems_comm_failure ? 'Yes' : 'No';
-
-            document.getElementById('operation-mode').textContent = data.control.operation_mode;
-            document.getElementById('target-power').textContent = formatValue(data.control.target_power_kw) + ' kW';
-            document.getElementById('effective-power').textContent = formatValue(data.control.effective_target_power_kw) + ' kW';
-            document.getElementById('charge-limit').textContent = formatValue(data.control.dynamic_charge_limit_kw) + ' kW';
-            document.getElementById('policy-reason').textContent = formatValue(data.control.policy_reason);
-
-            document.getElementById('bms-charge-voltage').textContent = formatValue(data.pcs.bms_charge_voltage_limit_v) + ' V';
-            document.getElementById('bms-charge-current').textContent = formatValue(data.pcs.bms_charge_current_limit_a) + ' A';
-            document.getElementById('auto-mode').textContent = data.control.auto_mode_enabled ? 'Enabled' : 'Disabled';
-
-            document.getElementById('ems-srv-enabled').textContent = srv.enabled ? 'Yes' : 'No';
-            document.getElementById('ems-srv-status').className = 'status-indicator ' + (srvRunning ? 'connected' : 'disconnected');
-            document.getElementById('ems-srv-status-text').textContent = srvRunning ? 'Running' : (srv.enabled ? 'Starting...' : 'Disabled');
-            document.getElementById('ems-srv-port').textContent = srv.port !== undefined ? String(srv.port) : '-';
-            document.getElementById('ems-srv-unit').textContent = srv.unit_id !== undefined ? String(srv.unit_id) : '-';
-            document.getElementById('ems-srv-clients').textContent = srv.connected_clients !== undefined ? String(srv.connected_clients) : '-';
-            document.getElementById('ems-address-viewer').textContent = formatAddressViewer(srv);
-
-            document.getElementById('last-update').textContent = now;
-            document.getElementById('debug-panel').textContent = JSON.stringify(data, null, 2);
-            document.getElementById('debug-update').textContent = now;
-        }
-
-        function updateDashboard() {
-            var base = window.location.pathname.replace(/[/]?$/, '/');
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', base + 'api/diagnostics', true);
-            xhr.onreadystatechange = function() {
-                var data;
-                if (xhr.readyState !== 4) {
-                    return;
-                }
-                if (xhr.status < 200 || xhr.status >= 300) {
-                    document.getElementById('debug-panel').textContent = 'Error: HTTP ' + xhr.status;
-                    return;
-                }
-                try {
-                    data = JSON.parse(xhr.responseText);
-                    applyDashboardData(data);
-                } catch (err) {
-                    console.error('Update failed:', err);
-                    document.getElementById('debug-panel').textContent = 'Error: ' + err.message;
-                }
-            };
-            xhr.send();
-        }
-
-        updateDashboard();
-        setInterval(updateDashboard, 2000);
-    </script>
 </body>
 </html>
 """
