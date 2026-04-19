@@ -2,8 +2,7 @@ name: PIBEMS
 version: 0.1.4
 slug: pibems
 description: Open-source EMS for Huawei + Megarevo PCS
-url: https://github.com/Mallis42/pibems-ha-addons
-icon: mdi:transmission-tower-import
+url: https://github.com/Mallis42/PIBEMS
 panel_icon: mdi:battery-charging-medium
 webui: http://[HOST]:8080/ui
 arch:
