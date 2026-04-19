@@ -115,7 +115,7 @@ class Options:
     huawei_address_offset: int = 0
     huawei_max_power_kw: float = 50.0
 
-    pcs_host: str = "192.168.1.30"
+    pcs_host: str = "192.168.1.100"
     pcs_port: int = 502
     pcs_unit_id: int = 1
     pcs_address_offset: int = 0
@@ -204,6 +204,12 @@ class EMSService:
                     "input": [],
                     "holding": [],
                 },
+            },
+            "pcs_direct_probe": {
+                "enabled": opts.enable_pcs_direct,
+                "last_ok": None,
+                "last_error": None,
+                "last_heartbeat": None,
             },
             "grid": {
                 "is_available": True,
@@ -907,10 +913,10 @@ class EMSService:
             try:
                 if self.opts.enable_huawei:
                     await self._poll_huawei()
-                # Skip direct PCS poll when the EMS server is running — the PCS connects to us
-                # rather than exposing its own TCP server in EMS-client mode.
                 if self.opts.enable_pcs_direct and self.server_ctx is None:
                     await self._poll_pcs()
+                elif self.opts.enable_pcs_direct and self.server_ctx is not None:
+                    await self._probe_pcs_heartbeat()
                 self.state["errors"] = self.state["errors"][-20:]
             except Exception as exc:  # noqa: BLE001
                 self.state["errors"].append(f"poll_loop: {exc}")
@@ -1036,6 +1042,38 @@ class EMSService:
             self.state["status"]["pcs_last_error_time"] = _now_iso()
             _LOG.warning("PCS poll error [host=%s port=%s unit=%s]: %s",
                          self.opts.pcs_host, self.opts.pcs_port, self.opts.pcs_unit_id, err_short)
+
+    async def _probe_pcs_heartbeat(self) -> None:
+        try:
+            heartbeat_addr = int(self.map["pcs"]["status"]["heartbeat"]["address"])
+            heartbeat = await self._read_u16(
+                self.pcs_client,
+                heartbeat_addr,
+                self.opts.pcs_unit_id,
+                self.opts.pcs_address_offset,
+                input_reg=True,
+            )
+            self.state["pcs_direct_probe"]["last_ok"] = _now_iso()
+            self.state["pcs_direct_probe"]["last_error"] = None
+            self.state["pcs_direct_probe"]["last_heartbeat"] = heartbeat
+            _LOG.info(
+                "PCS direct heartbeat probe ok [host=%s port=%s unit=%s addr=%s value=%s]",
+                self.opts.pcs_host,
+                self.opts.pcs_port,
+                self.opts.pcs_unit_id,
+                heartbeat_addr,
+                heartbeat,
+            )
+        except Exception as exc:  # noqa: BLE001
+            err_short = str(exc).split("\n")[0][:80]
+            self.state["pcs_direct_probe"]["last_error"] = err_short
+            _LOG.warning(
+                "PCS direct heartbeat probe failed [host=%s port=%s unit=%s]: %s",
+                self.opts.pcs_host,
+                self.opts.pcs_port,
+                self.opts.pcs_unit_id,
+                err_short,
+            )
 
     async def _control_huawei(self) -> None:
         if self._is_read_only_mode():
