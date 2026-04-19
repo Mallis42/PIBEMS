@@ -432,7 +432,8 @@ class EMSService:
 
         async function updateDashboard() {
             try {
-                const resp = await fetch('api/diagnostics');
+                const base = window.location.pathname.replace(/\/?$/, '/');
+                const resp = await fetch(base + 'api/diagnostics');
                 const data = await resp.json();
                 const now = new Date().toLocaleTimeString();
 
@@ -520,13 +521,14 @@ class EMSService:
                 _LOG.info("api | " + format, *args)
 
             def do_GET(self) -> None:  # noqa: N802
-                if self.path == "/health":
+                path = self.path.split("?")[0].rstrip("/") or "/"
+                if path == "/health":
                     self._send_json(200, service._health_payload())
                     return
-                if self.path == "/api/diagnostics":
+                if path == "/api/diagnostics":
                     self._send_json(200, service.state)
                     return
-                if self.path == "/ui" or self.path == "/":
+                if path in ("/ui", "/"):
                     html = service._get_ui_html()
                     body = html.encode("utf-8")
                     self.send_response(200)
@@ -538,7 +540,8 @@ class EMSService:
                 self._send_json(404, {"ok": False, "error": "not found"})
 
             def do_POST(self) -> None:  # noqa: N802
-                if self.path != "/api/control":
+                path = self.path.split("?")[0].rstrip("/") or "/"
+                if path != "/api/control":
                     self._send_json(404, {"ok": False, "error": "not found"})
                     return
                 try:
