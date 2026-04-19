@@ -2,6 +2,18 @@ rest:
   - resource: http://127.0.0.1:8080/api/diagnostics
     scan_interval: 2
     sensor:
+      - name: PIBEMS Huawei Connection Status
+        unique_id: pibems_huawei_connection_status
+        value_template: "{{ 'connected' if value_json.status.huawei_connected else 'disconnected' }}"
+      - name: PIBEMS Huawei Last Error
+        unique_id: pibems_huawei_last_error
+        value_template: "{{ value_json.status.huawei_last_error | default('none') }}"
+      - name: PIBEMS PCS Connection Status
+        unique_id: pibems_pcs_connection_status
+        value_template: "{{ 'connected' if value_json.status.pcs_connected else 'disconnected' }}"
+      - name: PIBEMS PCS Last Error
+        unique_id: pibems_pcs_last_error
+        value_template: "{{ value_json.status.pcs_last_error | default('none') }}"
       - name: PIBEMS PCS SOC
         unique_id: pibems_pcs_soc
         value_template: "{{ value_json.pcs.soc | default(0) }}"

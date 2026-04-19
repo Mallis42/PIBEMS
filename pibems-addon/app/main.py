@@ -81,6 +81,14 @@ class EMSService:
         self.heartbeat_counter = 0
 
         self.state: dict[str, Any] = {
+            "status": {
+                "huawei_connected": False,
+                "pcs_connected": False,
+                "huawei_last_error": None,
+                "pcs_last_error": None,
+                "huawei_last_error_time": None,
+                "pcs_last_error_time": None,
+            },
             "huawei": {},
             "pcs": {},
             "control": {
@@ -117,10 +125,364 @@ class EMSService:
         return {
             "ok": True,
             "huawei_enabled": self.opts.enable_huawei,
+            "huawei_connected": self.state["status"].get("huawei_connected", False),
             "pcs_enabled": self.opts.enable_pcs_direct,
+            "pcs_connected": self.state["status"].get("pcs_connected", False),
             "ems_server_enabled": self.opts.enable_ems_server,
             "operation_mode": self.state["control"].get("operation_mode", "control"),
+            "last_huawei_error": self.state["status"].get("huawei_last_error"),
+            "last_pcs_error": self.state["status"].get("pcs_last_error"),
         }
+
+    def _get_ui_html(self) -> str:
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIBEMS Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 15px;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+        .tab-btn.active {
+            background: white;
+            color: #2a5298;
+        }
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: none;
+        }
+        .card.active {
+            display: block;
+        }
+        .card.full {
+            grid-column: 1 / -1;
+        }
+        .card h2 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #2a5298;
+            border-bottom: 2px solid #2a5298;
+            padding-bottom: 10px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .status-indicator.connected {
+            background: #4CAF50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        .status-indicator.disconnected {
+            background: #f44336;
+            box-shadow: 0 0 10px rgba(244, 67, 54, 0.5);
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        .stat-label {
+            font-weight: 600;
+            color: #666;
+        }
+        .stat-value {
+            color: #2a5298;
+            font-weight: 500;
+            font-family: 'Courier New', monospace;
+        }
+        .error-msg {
+            color: #f44336;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .debug-panel {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .last-update {
+            text-align: center;
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 10px;
+        }
+        .grid-3 {
+            grid-template-columns: repeat(3, 1fr) !important;
+        }
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+            .grid-3 {
+                grid-template-columns: 1fr !important;
+            }
+            h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ PIBEMS Dashboard</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('status')">Status</button>
+            <button class="tab-btn" onclick="showTab('debug')">Debug</button>
+        </div>
+
+        <div id="status" class="tab-content active">
+            <div class="content grid-3">
+                <div class="card active">
+                    <h2>🔌 Huawei Inverter</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Connection:</span>
+                        <span><span id="huawei-status" class="status-indicator disconnected"></span><span id="huawei-status-text">Disconnected</span></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Status:</span>
+                        <span class="stat-value" id="huawei-device-status">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Active Power:</span>
+                        <span class="stat-value" id="huawei-power">- kW</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Derate %:</span>
+                        <span class="stat-value" id="huawei-derate">-</span>
+                    </div>
+                    <div id="huawei-error" class="error-msg"></div>
+                </div>
+
+                <div class="card active">
+                    <h2>🔋 PCS Battery</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Connection:</span>
+                        <span><span id="pcs-status" class="status-indicator disconnected"></span><span id="pcs-status-text">Disconnected</span></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">SOC:</span>
+                        <span class="stat-value" id="pcs-soc">- %</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Active Power:</span>
+                        <span class="stat-value" id="pcs-power">- kW</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Grid Power:</span>
+                        <span class="stat-value" id="pcs-meter-power">- kW</span>
+                    </div>
+                    <div id="pcs-error" class="error-msg"></div>
+                </div>
+
+                <div class="card active">
+                    <h2>🌐 Grid Status</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Available:</span>
+                        <span><span id="grid-status" class="status-indicator disconnected"></span><span id="grid-status-text">Offline</span></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Avg Voltage:</span>
+                        <span class="stat-value" id="grid-voltage">- V</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">EMS Comm Fail:</span>
+                        <span class="stat-value" id="ems-comm-fail">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Operation Mode:</span>
+                        <span class="stat-value" id="operation-mode">-</span>
+                    </div>
+                </div>
+
+                <div class="card active">
+                    <h2>📊 Control Settings</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Target Power:</span>
+                        <span class="stat-value" id="target-power">- kW</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Effective Power:</span>
+                        <span class="stat-value" id="effective-power">- kW</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Dynamic Charge Limit:</span>
+                        <span class="stat-value" id="charge-limit">- kW</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Policy Reason:</span>
+                        <span class="stat-value" id="policy-reason">-</span>
+                    </div>
+                </div>
+
+                <div class="card active">
+                    <h2>⚙️ Battery Limits</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Charge V Limit:</span>
+                        <span class="stat-value" id="bms-charge-voltage">- V</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Charge I Limit:</span>
+                        <span class="stat-value" id="bms-charge-current">- A</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Auto Mode:</span>
+                        <span class="stat-value" id="auto-mode">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card full active">
+                <div class="last-update">Last update: <span id="last-update">Never</span></div>
+            </div>
+        </div>
+
+        <div id="debug" class="tab-content">
+            <div class="card full">
+                <h2>🐞 Raw Diagnostics JSON</h2>
+                <div class="debug-panel" id="debug-panel">Loading...</div>
+                <div class="last-update">Last update: <span id="debug-update">Never</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function formatValue(val) {
+            if (val === null || val === undefined) return '-';
+            if (typeof val === 'number') return val.toFixed(2);
+            return String(val);
+        }
+
+        async function updateDashboard() {
+            try {
+                const resp = await fetch('/api/diagnostics');
+                const data = await resp.json();
+                const now = new Date().toLocaleTimeString();
+
+                // Update Huawei
+                const hw_conn = data.status.huawei_connected;
+                document.getElementById('huawei-status').className = 'status-indicator ' + (hw_conn ? 'connected' : 'disconnected');
+                document.getElementById('huawei-status-text').textContent = hw_conn ? 'Connected' : 'Disconnected';
+                document.getElementById('huawei-device-status').textContent = formatValue(data.huawei.device_status);
+                document.getElementById('huawei-power').textContent = formatValue(data.huawei.active_power_kw) + ' kW';
+                document.getElementById('huawei-derate').textContent = formatValue(data.control.huawei_derate_percent) + '%';
+                document.getElementById('huawei-error').textContent = data.status.huawei_last_error ? '⚠️ ' + data.status.huawei_last_error : '';
+
+                // Update PCS
+                const pcs_conn = data.status.pcs_connected;
+                document.getElementById('pcs-status').className = 'status-indicator ' + (pcs_conn ? 'connected' : 'disconnected');
+                document.getElementById('pcs-status-text').textContent = pcs_conn ? 'Connected' : 'Disconnected';
+                document.getElementById('pcs-soc').textContent = formatValue(data.pcs.soc) + ' %';
+                document.getElementById('pcs-power').textContent = formatValue(data.pcs.load_active_power_kw) + ' kW';
+                document.getElementById('pcs-meter-power').textContent = formatValue(data.pcs.total_power_meter_kw) + ' kW';
+                document.getElementById('pcs-error').textContent = data.status.pcs_last_error ? '⚠️ ' + data.status.pcs_last_error : '';
+
+                // Update Grid
+                const grid_avail = data.grid.is_available;
+                document.getElementById('grid-status').className = 'status-indicator ' + (grid_avail ? 'connected' : 'disconnected');
+                document.getElementById('grid-status-text').textContent = grid_avail ? 'Online' : 'Offline';
+                document.getElementById('grid-voltage').textContent = formatValue(data.grid.avg_voltage_v) + ' V';
+                document.getElementById('ems-comm-fail').textContent = data.pcs.ems_comm_failure ? 'Yes' : 'No';
+
+                // Update Control
+                document.getElementById('operation-mode').textContent = data.control.operation_mode;
+                document.getElementById('target-power').textContent = formatValue(data.control.target_power_kw) + ' kW';
+                document.getElementById('effective-power').textContent = formatValue(data.control.effective_target_power_kw) + ' kW';
+                document.getElementById('charge-limit').textContent = formatValue(data.control.dynamic_charge_limit_kw) + ' kW';
+                document.getElementById('policy-reason').textContent = formatValue(data.control.policy_reason);
+
+                // Update Battery Limits
+                document.getElementById('bms-charge-voltage').textContent = formatValue(data.pcs.bms_charge_voltage_limit_v) + ' V';
+                document.getElementById('bms-charge-current').textContent = formatValue(data.pcs.bms_charge_current_limit_a) + ' A';
+                document.getElementById('auto-mode').textContent = data.control.auto_mode_enabled ? 'Enabled' : 'Disabled';
+
+                document.getElementById('last-update').textContent = now;
+                document.getElementById('debug-panel').textContent = JSON.stringify(data, null, 2);
+                document.getElementById('debug-update').textContent = now;
+            } catch (err) {
+                console.error('Update failed:', err);
+                document.getElementById('debug-panel').textContent = 'Error: ' + err.message;
+            }
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 2000);
+    </script>
+</body>
+</html>
+"""
 
     def _apply_control_payload(self, payload: dict[str, Any]) -> tuple[bool, str | None]:
         if "target_power_kw" in payload and payload["target_power_kw"] is not None:
@@ -158,6 +520,15 @@ class EMSService:
                     return
                 if self.path == "/api/diagnostics":
                     self._send_json(200, service.state)
+                    return
+                if self.path == "/ui" or self.path == "/":
+                    html = service._get_ui_html()
+                    body = html.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                     return
                 self._send_json(404, {"ok": False, "error": "not found"})
 
@@ -295,74 +666,93 @@ class EMSService:
             await asyncio.sleep(self.opts.heartbeat_interval_sec)
 
     async def _poll_huawei(self) -> None:
-        points = self.map["huawei"]["status"]
-        status = await self._read_u16(self.huawei_client, points["device_status"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
-        pwr = await self._read_i32(self.huawei_client, points["active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
-        meter = await self._read_i32(self.huawei_client, points["meter_active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
+        try:
+            points = self.map["huawei"]["status"]
+            status = await self._read_u16(self.huawei_client, points["device_status"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
+            pwr = await self._read_i32(self.huawei_client, points["active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
+            meter = await self._read_i32(self.huawei_client, points["meter_active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
 
-        self.state["huawei"]["device_status"] = status
-        self.state["huawei"]["active_power_kw"] = pwr / 1000.0
-        self.state["huawei"]["meter_active_power_w"] = meter
+            self.state["huawei"]["device_status"] = status
+            self.state["huawei"]["active_power_kw"] = pwr / 1000.0
+            self.state["huawei"]["meter_active_power_w"] = meter
+            self.state["status"]["huawei_connected"] = True
+            self.state["status"]["huawei_last_error"] = None
+        except Exception as exc:  # noqa: BLE001
+            self.state["status"]["huawei_connected"] = False
+            err_short = str(exc).split("\n")[0][:80]
+            self.state["status"]["huawei_last_error"] = err_short
+            self.state["status"]["huawei_last_error_time"] = _now_iso()
+            _LOG.warning("Huawei not connected: %s", err_short)
 
     async def _poll_pcs(self) -> None:
-        points = self.map["pcs"]["status"]
-        alarm = await self._read_u16(self.pcs_client, points["alarm_word_1"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        status = await self._read_u16(self.pcs_client, points["pcs_status_word"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        monitor = await self._read_u16(self.pcs_client, points["monitor_alarm_word"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        total_power = await self._read_i16(self.pcs_client, points["total_power_meter"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        load_p = await self._read_i16(self.pcs_client, points["load_active_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        load_q = await self._read_i16(self.pcs_client, points["load_reactive_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        load_s = await self._read_i16(self.pcs_client, points["load_apparent_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        soc = await self._read_u16(self.pcs_client, points["soc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+        try:
+            points = self.map["pcs"]["status"]
+            alarm = await self._read_u16(self.pcs_client, points["alarm_word_1"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            status = await self._read_u16(self.pcs_client, points["pcs_status_word"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            monitor = await self._read_u16(self.pcs_client, points["monitor_alarm_word"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            total_power = await self._read_i16(self.pcs_client, points["total_power_meter"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            load_p = await self._read_i16(self.pcs_client, points["load_active_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            load_q = await self._read_i16(self.pcs_client, points["load_reactive_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            load_s = await self._read_i16(self.pcs_client, points["load_apparent_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            soc = await self._read_u16(self.pcs_client, points["soc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
 
-        grid_v_ab = await self._read_i16(self.pcs_client, points["grid_voltage_ab"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        grid_v_bc = await self._read_i16(self.pcs_client, points["grid_voltage_bc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-        grid_v_ca = await self._read_i16(self.pcs_client, points["grid_voltage_ca"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            grid_v_ab = await self._read_i16(self.pcs_client, points["grid_voltage_ab"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            grid_v_bc = await self._read_i16(self.pcs_client, points["grid_voltage_bc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            grid_v_ca = await self._read_i16(self.pcs_client, points["grid_voltage_ca"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
 
-        bms_charge_voltage_limit = await self._read_u16(
-            self.pcs_client,
-            self.map["pcs"]["limits"]["bms_charge_voltage_limit"]["address"],
-            self.opts.pcs_unit_id,
-            self.opts.pcs_address_offset,
-        )
-        bms_charge_current_limit = await self._read_u16(
-            self.pcs_client,
-            self.map["pcs"]["limits"]["bms_charge_current_limit"]["address"],
-            self.opts.pcs_unit_id,
-            self.opts.pcs_address_offset,
-        )
+            bms_charge_voltage_limit = await self._read_u16(
+                self.pcs_client,
+                self.map["pcs"]["limits"]["bms_charge_voltage_limit"]["address"],
+                self.opts.pcs_unit_id,
+                self.opts.pcs_address_offset,
+            )
+            bms_charge_current_limit = await self._read_u16(
+                self.pcs_client,
+                self.map["pcs"]["limits"]["bms_charge_current_limit"]["address"],
+                self.opts.pcs_unit_id,
+                self.opts.pcs_address_offset,
+            )
+            self.state["status"]["pcs_connected"] = True
+            self.state["status"]["pcs_last_error"] = None
+        except Exception as exc:  # noqa: BLE001
+            self.state["status"]["pcs_connected"] = False
+            err_short = str(exc).split("\n")[0][:80]
+            self.state["status"]["pcs_last_error"] = err_short
+            self.state["status"]["pcs_last_error_time"] = _now_iso()
+            _LOG.warning("PCS not connected: %s", err_short)
+            return
 
-        self.state["pcs"]["alarm_word_1"] = alarm
-        self.state["pcs"]["pcs_status_word"] = status
-        self.state["pcs"]["monitor_alarm_word"] = monitor
-        self.state["pcs"]["total_power_meter_kw"] = total_power / 10.0
-        self.state["pcs"]["load_active_power_kw"] = load_p / 10.0
-        self.state["pcs"]["load_reactive_power_kvar"] = load_q / 10.0
-        self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
-        self.state["pcs"]["soc"] = soc
-        self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
-        self.state["pcs"]["grid_voltage_bc_v"] = grid_v_bc / 10.0
-        self.state["pcs"]["grid_voltage_ca_v"] = grid_v_ca / 10.0
-        self.state["pcs"]["bms_charge_voltage_limit_v"] = bms_charge_voltage_limit
-        self.state["pcs"]["bms_charge_current_limit_a"] = bms_charge_current_limit
+            self.state["pcs"]["alarm_word_1"] = alarm
+            self.state["pcs"]["pcs_status_word"] = status
+            self.state["pcs"]["monitor_alarm_word"] = monitor
+            self.state["pcs"]["total_power_meter_kw"] = total_power / 10.0
+            self.state["pcs"]["load_active_power_kw"] = load_p / 10.0
+            self.state["pcs"]["load_reactive_power_kvar"] = load_q / 10.0
+            self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
+            self.state["pcs"]["soc"] = soc
+            self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
+            self.state["pcs"]["grid_voltage_bc_v"] = grid_v_bc / 10.0
+            self.state["pcs"]["grid_voltage_ca_v"] = grid_v_ca / 10.0
+            self.state["pcs"]["bms_charge_voltage_limit_v"] = bms_charge_voltage_limit
+            self.state["pcs"]["bms_charge_current_limit_a"] = bms_charge_current_limit
 
-        # Bit 2 in monitor alarm word is EMS communication failure in protocol docs.
-        self.state["pcs"]["ems_comm_failure"] = bool(monitor & (1 << 2))
+            # Bit 2 in monitor alarm word is EMS communication failure in protocol docs.
+            self.state["pcs"]["ems_comm_failure"] = bool(monitor & (1 << 2))
 
-        avg_grid_v = (
-            abs(self.state["pcs"]["grid_voltage_ab_v"])
-            + abs(self.state["pcs"]["grid_voltage_bc_v"])
-            + abs(self.state["pcs"]["grid_voltage_ca_v"])
-        ) / 3.0
-        grid_available = avg_grid_v >= self.opts.grid_voltage_present_threshold_v
-        self.state["grid"]["is_available"] = grid_available
-        self.state["grid"]["avg_voltage_v"] = avg_grid_v
+            avg_grid_v = (
+                abs(self.state["pcs"]["grid_voltage_ab_v"])
+                + abs(self.state["pcs"]["grid_voltage_bc_v"])
+                + abs(self.state["pcs"]["grid_voltage_ca_v"])
+            ) / 3.0
+            grid_available = avg_grid_v >= self.opts.grid_voltage_present_threshold_v
+            self.state["grid"]["is_available"] = grid_available
+            self.state["grid"]["avg_voltage_v"] = avg_grid_v
 
-        if self._last_grid_available is None:
-            self._last_grid_available = grid_available
-        elif self._last_grid_available != grid_available:
-            self.state["grid"]["last_transition"] = "return" if grid_available else "fail"
-            self._last_grid_available = grid_available
+            if self._last_grid_available is None:
+                self._last_grid_available = grid_available
+            elif self._last_grid_available != grid_available:
+                self.state["grid"]["last_transition"] = "return" if grid_available else "fail"
+                self._last_grid_available = grid_available
 
     async def _control_huawei(self) -> None:
         if self._is_read_only_mode():
