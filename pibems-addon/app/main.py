@@ -30,9 +30,10 @@ class _LoggingSlaveContext(ModbusSlaveContext):
     # Maps pymodbus internal register-type codes to human names.
     _REG_NAMES = {1: "Coil", 2: "DiscreteInput", 3: "HoldingReg", 4: "InputReg"}
 
-    def __init__(self, *args: Any, register_labels: dict[int, dict[int, str]] | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, register_labels: dict[int, dict[int, str]] | None = None, on_external_read: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._register_labels = register_labels or {}
+        self._on_external_read = on_external_read
 
     def _label_range(self, reg_type: int, address: int, count: int) -> str:
         labels = self._register_labels.get(reg_type, {})
@@ -51,15 +52,23 @@ class _LoggingSlaveContext(ModbusSlaveContext):
             "%sEMS-SERVER  PCS-READ   %s  addr=%s count=%s labels=[%s]  -> %s%s",
             _PURPLE, reg, address, count, reg_labels, values, _RESET,
         )
+        if self._on_external_read is not None:
+            self._on_external_read()
         return values
 
-    def setValues(self, fc_as_hex: int, address: int, values: list) -> None:  # type: ignore[override]  
+    def setValues(self, fc_as_hex: int, address: int, values: list, *, _internal: bool = False) -> None:  # type: ignore[override]
         reg = self._REG_NAMES.get(fc_as_hex, f"reg{fc_as_hex}")
         reg_labels = self._label_range(fc_as_hex, address, len(values))
-        logging.getLogger("pibems").debug(
-            "%sEMS-SERVER  INTERNAL-WRITE  %s  addr=%s labels=[%s] values=%s%s",
-            _PURPLE, reg, address, reg_labels, values, _RESET,
-        )
+        if _internal:
+            logging.getLogger("pibems").debug(
+                "%sEMS-SERVER  INTERNAL-WRITE  %s  addr=%s labels=[%s] values=%s%s",
+                _PURPLE, reg, address, reg_labels, values, _RESET,
+            )
+        else:
+            logging.getLogger("pibems").info(
+                "%sEMS-SERVER  PCS-WRITE  %s  addr=%s labels=[%s] values=%s%s",
+                _PURPLE, reg, address, reg_labels, values, _RESET,
+            )
         super().setValues(fc_as_hex, address, values)
 
 _LOG = logging.getLogger("pibems")
@@ -222,6 +231,11 @@ class EMSService:
             labels[3].setdefault(addr, f"ems_server.holding_defaults.{addr}")
 
         return labels
+
+    def _on_pcs_ems_contact(self) -> None:
+        """Called whenever the PCS successfully reads from our EMS Modbus server."""
+        self.state["status"]["pcs_connected"] = True
+        self.state["status"]["pcs_last_error"] = None
 
     def _health_payload(self) -> dict[str, Any]:
         return {
@@ -749,7 +763,7 @@ class EMSService:
         # single=True makes the server respond to ANY Modbus unit_id the PCS sends.
         # This is correct EMS server behaviour - a real EMS accepts all slaves.
         # single=False with a keyed dict would silently reject unit_ids that don't match.
-        store = _LoggingSlaveContext(ir=ir_block, hr=hr_block, register_labels=register_labels)
+        store = _LoggingSlaveContext(ir=ir_block, hr=hr_block, register_labels=register_labels, on_external_read=self._on_pcs_ems_contact)
         self.server_ctx = ModbusServerContext(slaves={0: store}, single=True)
 
         for addr, value in input_defaults.items():
@@ -777,7 +791,9 @@ class EMSService:
             try:
                 if self.opts.enable_huawei:
                     await self._poll_huawei()
-                if self.opts.enable_pcs_direct:
+                # Skip direct PCS poll when the EMS server is running — the PCS connects to us
+                # rather than exposing its own TCP server in EMS-client mode.
+                if self.opts.enable_pcs_direct and self.server_ctx is None:
                     await self._poll_pcs()
                 self.state["errors"] = self.state["errors"][-20:]
             except Exception as exc:  # noqa: BLE001
@@ -790,7 +806,8 @@ class EMSService:
             try:
                 if self.opts.enable_huawei:
                     await self._control_huawei()
-                if self.opts.enable_pcs_direct:
+                # Run PCS control in both direct-TCP mode and EMS-server mode.
+                if self.opts.enable_pcs_direct or self.server_ctx is not None:
                     await self._control_pcs()
             except Exception as exc:  # noqa: BLE001
                 self.state["errors"].append(f"control_loop: {exc}")
@@ -803,18 +820,13 @@ class EMSService:
             self.state["pcs"]["synthetic_heartbeat"] = self.heartbeat_counter
 
             if self.server_ctx is not None:
-                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2219, [self.heartbeat_counter])
+                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2219, [self.heartbeat_counter], _internal=True)
 
-                # Mirror latest telemetry into server-side registers the PCS may poll.
-                meter_kw = float(self.state["pcs"].get("total_power_meter_kw", 0.0))
-                load_kw = float(self.state["pcs"].get("load_active_power_kw", 0.0))
-                load_kvar = float(self.state["pcs"].get("load_reactive_power_kvar", 0.0))
-                load_kva = float(self.state["pcs"].get("load_apparent_power_kva", 0.0))
-
-                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2218, [self._encode_i16(meter_kw * 10)])
-                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2326, [self._encode_i16(load_kw * 10)])
-                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2327, [self._encode_i16(load_kvar * 10)])
-                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2328, [self._encode_i16(load_kva * 10)])
+                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2218, [0], _internal=True)
+                # Load power registers kept as zero until a separate load meter is wired in.
+                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2326, [0], _internal=True)
+                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2327, [0], _internal=True)
+                self.server_ctx[self.opts.ems_unit_id].setValues(4, 2328, [0], _internal=True)
 
             await asyncio.sleep(self.opts.heartbeat_interval_sec)
 
@@ -935,52 +947,43 @@ class EMSService:
         target = self._resolve_target_power_kw()
         soc = int(self.state["pcs"].get("soc", 50))
 
-        # Ensure control mode bits are primed before writing power commands.
-        await self._write_u16(self.pcs_client, control["grid_connected_mode"]["address"], 3, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
-        await self._write_u16(self.pcs_client, control["power_control_type"]["address"], 2, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
-        await self._write_u16(self.pcs_client, control["remote_on_off"]["address"], self.opts.pcs_start_command, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
-        await self._write_u16(self.pcs_client, control["control_mode"]["address"], 1, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
-        await self._write_u16(self.pcs_client, control["discharge_stop_soc"]["address"], self.opts.outage_reserve_soc, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
-        await self._write_u16(self.pcs_client, control["charge_stop_soc"]["address"], self.opts.outage_max_soc_from_huawei, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
-
         grid_available = bool(self.state["grid"].get("is_available", True))
         huawei_kw = float(self.state["huawei"].get("active_power_kw", 0.0))
         no_sun = huawei_kw < self.opts.solar_present_threshold_kw
+        remote_cmd = self.opts.pcs_start_command
         if not grid_available and soc <= self.opts.outage_shutdown_soc_no_sun and no_sun:
             target = 0.0
-            await self._write_u16(
-                self.pcs_client,
-                control["remote_on_off"]["address"],
-                self.opts.pcs_stop_command,
-                self.opts.pcs_unit_id,
-                self.opts.pcs_address_offset,
-            )
+            remote_cmd = self.opts.pcs_stop_command
             self.state["control"]["policy_reason"] = "outage_shutdown_low_soc_no_sun"
-        elif grid_available and self.opts.auto_start_on_grid_return:
-            await self._write_u16(
-                self.pcs_client,
-                control["remote_on_off"]["address"],
-                self.opts.pcs_start_command,
-                self.opts.pcs_unit_id,
-                self.opts.pcs_address_offset,
-            )
 
         raw_cmd = self._encode_i16(int(round(target * 10)))
-        await self._write_u16(
-            self.pcs_client,
-            control["constant_power_command"]["address"],
-            raw_cmd,
-            self.opts.pcs_unit_id,
-            self.opts.pcs_address_offset,
-        )
-        self.state["control"]["last_written_pcs_power_kw"] = target
 
         if self.server_ctx is not None:
-            self.server_ctx[self.opts.ems_unit_id].setValues(3, 2761, [raw_cmd])
-            self.server_ctx[self.opts.ems_unit_id].setValues(3, 2765, [3])
-            self.server_ctx[self.opts.ems_unit_id].setValues(3, 2768, [2])
-            self.server_ctx[self.opts.ems_unit_id].setValues(3, 2769, [0x5555])
-            self.server_ctx[self.opts.ems_unit_id].setValues(3, 2770, [1])
+            # EMS-server mode: the PCS reads its control commands from our holding registers.
+            # The PCS disables its own TCP server once it establishes an EMS connection.
+            ctx = self.server_ctx[self.opts.ems_unit_id]
+            ctx.setValues(3, control["grid_connected_mode"]["address"],   [3],               _internal=True)
+            ctx.setValues(3, control["power_control_type"]["address"],    [2],               _internal=True)
+            ctx.setValues(3, control["remote_on_off"]["address"],         [remote_cmd],      _internal=True)
+            ctx.setValues(3, control["control_mode"]["address"],          [1],               _internal=True)
+            ctx.setValues(3, control["discharge_stop_soc"]["address"],    [self.opts.outage_reserve_soc],        _internal=True)
+            ctx.setValues(3, control["charge_stop_soc"]["address"],       [self.opts.outage_max_soc_from_huawei], _internal=True)
+            ctx.setValues(3, control["constant_power_command"]["address"],[raw_cmd],         _internal=True)
+        else:
+            # Direct TCP mode: connect to PCS Modbus TCP server.
+            await self._write_u16(self.pcs_client, control["grid_connected_mode"]["address"], 3, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            await self._write_u16(self.pcs_client, control["power_control_type"]["address"], 2, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            await self._write_u16(self.pcs_client, control["remote_on_off"]["address"], self.opts.pcs_start_command, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            await self._write_u16(self.pcs_client, control["control_mode"]["address"], 1, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            await self._write_u16(self.pcs_client, control["discharge_stop_soc"]["address"], self.opts.outage_reserve_soc, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            await self._write_u16(self.pcs_client, control["charge_stop_soc"]["address"], self.opts.outage_max_soc_from_huawei, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            if not grid_available and soc <= self.opts.outage_shutdown_soc_no_sun and no_sun:
+                await self._write_u16(self.pcs_client, control["remote_on_off"]["address"], self.opts.pcs_stop_command, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            elif grid_available and self.opts.auto_start_on_grid_return:
+                await self._write_u16(self.pcs_client, control["remote_on_off"]["address"], self.opts.pcs_start_command, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+            await self._write_u16(self.pcs_client, control["constant_power_command"]["address"], raw_cmd, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
+
+        self.state["control"]["last_written_pcs_power_kw"] = target
 
     def _resolve_target_power_kw(self) -> float:
         manual_target = float(self.state["control"].get("target_power_kw", 0.0))
