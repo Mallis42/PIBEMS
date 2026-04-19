@@ -658,20 +658,35 @@ class EMSService:
             return String(val);
         }
 
+        function padRight(value, width) {
+            const text = String(value);
+            if (text.length >= width) return text;
+            let padded = text;
+            while (padded.length < width) {
+                padded += ' ';
+            }
+            return padded;
+        }
+
         function formatAddressViewer(server) {
             const view = server.address_view || {};
             const lines = [];
             lines.push('INPUT REGISTERS');
             (view.input || []).forEach(entry => {
-                lines.push(String(entry.address).padEnd(6) + ' = ' + String(entry.value ?? '-') .padEnd(8) + ' ' + entry.label);
+                const inputValue = (entry.value === null || entry.value === undefined) ? '-' : String(entry.value);
+                lines.push(padRight(entry.address, 6) + ' = ' + padRight(inputValue, 8) + ' ' + entry.label);
             });
             lines.push('');
             lines.push('HOLDING REGISTERS');
             (view.holding || []).forEach(entry => {
-                lines.push(String(entry.address).padEnd(6) + ' = ' + String(entry.value ?? '-') .padEnd(8) + ' ' + entry.label);
+                const holdingValue = (entry.value === null || entry.value === undefined) ? '-' : String(entry.value);
+                lines.push(padRight(entry.address, 6) + ' = ' + padRight(holdingValue, 8) + ' ' + entry.label);
             });
             lines.push('');
-            lines.push('READ COUNTS: input=' + String(server.input_read_count ?? 0) + ' holding=' + String(server.holding_read_count ?? 0) + ' writes=' + String(server.write_count ?? 0));
+            const inputReadCount = (server.input_read_count === null || server.input_read_count === undefined) ? 0 : server.input_read_count;
+            const holdingReadCount = (server.holding_read_count === null || server.holding_read_count === undefined) ? 0 : server.holding_read_count;
+            const writeCount = (server.write_count === null || server.write_count === undefined) ? 0 : server.write_count;
+            lines.push('READ COUNTS: input=' + String(inputReadCount) + ' holding=' + String(holdingReadCount) + ' writes=' + String(writeCount));
             if (server.last_holding_read) {
                 lines.push('LAST HOLDING READ: addr=' + String(server.last_holding_read.address) + ' values=' + JSON.stringify(server.last_holding_read.values));
             }
