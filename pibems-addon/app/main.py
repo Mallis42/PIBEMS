@@ -720,15 +720,6 @@ class EMSService:
                 self.opts.pcs_unit_id,
                 self.opts.pcs_address_offset,
             )
-            self.state["status"]["pcs_connected"] = True
-            self.state["status"]["pcs_last_error"] = None
-        except Exception as exc:  # noqa: BLE001
-            self.state["status"]["pcs_connected"] = False
-            err_short = str(exc).split("\n")[0][:80]
-            self.state["status"]["pcs_last_error"] = err_short
-            self.state["status"]["pcs_last_error_time"] = _now_iso()
-            _LOG.warning("PCS not connected: %s", err_short)
-            return
 
             self.state["pcs"]["alarm_word_1"] = alarm
             self.state["pcs"]["pcs_status_word"] = status
@@ -761,6 +752,16 @@ class EMSService:
             elif self._last_grid_available != grid_available:
                 self.state["grid"]["last_transition"] = "return" if grid_available else "fail"
                 self._last_grid_available = grid_available
+
+            self.state["status"]["pcs_connected"] = True
+            self.state["status"]["pcs_last_error"] = None
+        except Exception as exc:  # noqa: BLE001
+            self.state["status"]["pcs_connected"] = False
+            err_short = str(exc).split("\n")[0][:80]
+            self.state["status"]["pcs_last_error"] = err_short
+            self.state["status"]["pcs_last_error_time"] = _now_iso()
+            _LOG.warning("PCS poll error [host=%s port=%s unit=%s]: %s",
+                         self.opts.pcs_host, self.opts.pcs_port, self.opts.pcs_unit_id, err_short)
 
     async def _control_huawei(self) -> None:
         if self._is_read_only_mode():
