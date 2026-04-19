@@ -2,14 +2,13 @@ import asyncio
 import json
 import logging
 import signal
+import threading
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-import uvicorn
 import yaml
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext, ModbusSlaveContext
 from pymodbus.server import StartAsyncTcpServer
@@ -74,14 +73,6 @@ class Options:
 
     register_map_file: str = "/app/config/register_map.yaml"
 
-
-class ControlRequest(BaseModel):
-    target_power_kw: float | None = None
-    huawei_derate_percent: float | None = None
-    auto_mode_enabled: bool | None = None
-    operation_mode: str | None = None
-
-
 class EMSService:
     def __init__(self, opts: Options, register_map: dict[str, Any]) -> None:
         self.opts = opts
@@ -119,45 +110,76 @@ class EMSService:
         self.pcs_client = AsyncModbusTcpClient(host=opts.pcs_host, port=opts.pcs_port)
 
         self.server_ctx: ModbusServerContext | None = None
-        self.app = self._build_api()
+        self.httpd: ThreadingHTTPServer | None = None
+        self.http_thread: threading.Thread | None = None
 
-    def _build_api(self) -> FastAPI:
-        app = FastAPI(title="PIBEMS", version="0.1.0")
+    def _health_payload(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "huawei_enabled": self.opts.enable_huawei,
+            "pcs_enabled": self.opts.enable_pcs_direct,
+            "ems_server_enabled": self.opts.enable_ems_server,
+            "operation_mode": self.state["control"].get("operation_mode", "control"),
+        }
 
-        @app.get("/health")
-        async def health() -> dict[str, Any]:
-            return {
-                "ok": True,
-                "huawei_enabled": self.opts.enable_huawei,
-                "pcs_enabled": self.opts.enable_pcs_direct,
-                "ems_server_enabled": self.opts.enable_ems_server,
-                "operation_mode": self.state["control"].get("operation_mode", "control"),
-            }
+    def _apply_control_payload(self, payload: dict[str, Any]) -> tuple[bool, str | None]:
+        if "target_power_kw" in payload and payload["target_power_kw"] is not None:
+            self.state["control"]["target_power_kw"] = float(payload["target_power_kw"])
+        if "huawei_derate_percent" in payload and payload["huawei_derate_percent"] is not None:
+            value = max(0.0, min(100.0, float(payload["huawei_derate_percent"])))
+            self.state["control"]["huawei_derate_percent"] = value
+        if "auto_mode_enabled" in payload and payload["auto_mode_enabled"] is not None:
+            self.state["control"]["auto_mode_enabled"] = bool(payload["auto_mode_enabled"])
+        if "operation_mode" in payload and payload["operation_mode"] is not None:
+            mode = str(payload["operation_mode"]).strip().lower()
+            if mode not in ("control", "read_only"):
+                return False, "operation_mode must be 'control' or 'read_only'"
+            self.state["control"]["operation_mode"] = mode
+        return True, None
 
-        @app.get("/api/diagnostics")
-        async def diagnostics() -> dict[str, Any]:
-            return self.state
+    def _build_handler_class(self):
+        service = self
 
-        @app.post("/api/control")
-        async def control(req: ControlRequest) -> dict[str, Any]:
-            if req.target_power_kw is not None:
-                self.state["control"]["target_power_kw"] = float(req.target_power_kw)
-            if req.huawei_derate_percent is not None:
-                value = max(0.0, min(100.0, float(req.huawei_derate_percent)))
-                self.state["control"]["huawei_derate_percent"] = value
-            if req.auto_mode_enabled is not None:
-                self.state["control"]["auto_mode_enabled"] = bool(req.auto_mode_enabled)
-            if req.operation_mode is not None:
-                mode = str(req.operation_mode).strip().lower()
-                if mode not in ("control", "read_only"):
-                    raise HTTPException(
-                        status_code=400,
-                        detail="operation_mode must be 'control' or 'read_only'",
-                    )
-                self.state["control"]["operation_mode"] = mode
-            return {"ok": True, "control": self.state["control"]}
+        class APIHandler(BaseHTTPRequestHandler):
+            def _send_json(self, status: int, payload: dict[str, Any]) -> None:
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
-        return app
+            def log_message(self, format: str, *args: Any) -> None:
+                _LOG.info("api | " + format, *args)
+
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/health":
+                    self._send_json(200, service._health_payload())
+                    return
+                if self.path == "/api/diagnostics":
+                    self._send_json(200, service.state)
+                    return
+                self._send_json(404, {"ok": False, "error": "not found"})
+
+            def do_POST(self) -> None:  # noqa: N802
+                if self.path != "/api/control":
+                    self._send_json(404, {"ok": False, "error": "not found"})
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    raw = self.rfile.read(length).decode("utf-8")
+                    payload = json.loads(raw) if raw else {}
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json(400, {"ok": False, "error": f"invalid json: {exc}"})
+                    return
+
+                ok, err = service._apply_control_payload(payload)
+                if not ok:
+                    self._send_json(400, {"ok": False, "error": err})
+                    return
+                self._send_json(200, {"ok": True, "control": service.state["control"]})
+
+        return APIHandler
 
     async def run(self) -> None:
         tasks = [
@@ -179,15 +201,21 @@ class EMSService:
             await self.pcs_client.close()
 
     async def _run_api(self) -> None:
-        server = uvicorn.Server(
-            uvicorn.Config(
-                self.app,
-                host=self.opts.api_bind_host,
-                port=self.opts.api_bind_port,
-                log_level="warning",
-            )
-        )
-        await server.serve()
+        handler = self._build_handler_class()
+        self.httpd = ThreadingHTTPServer((self.opts.api_bind_host, self.opts.api_bind_port), handler)
+        self.http_thread = threading.Thread(target=self.httpd.serve_forever, name="pibems-http", daemon=True)
+        self.http_thread.start()
+        _LOG.info("HTTP API listening on %s:%s", self.opts.api_bind_host, self.opts.api_bind_port)
+
+        try:
+            while not self.stop_event.is_set():
+                await asyncio.sleep(0.5)
+        finally:
+            if self.httpd is not None:
+                self.httpd.shutdown()
+                self.httpd.server_close()
+            if self.http_thread is not None:
+                self.http_thread.join(timeout=3)
 
     async def _run_modbus_server(self) -> None:
         defaults = self.map.get("ems_server", {})

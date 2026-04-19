@@ -1,4 +1,4 @@
-ARG BUILD_FROM=ghcr.io/hassio-addons/base-python:3.12-alpine3.20
+ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 WORKDIR /app
