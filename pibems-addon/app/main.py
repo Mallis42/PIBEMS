@@ -3,6 +3,7 @@ import json
 import logging
 import signal
 import threading
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +19,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s | %(message)s",
 )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 @dataclass
@@ -895,6 +900,13 @@ class EMSService:
             return min(target, abs(self.opts.max_discharge_kw))
         return 0.0
 
+    async def _ensure_connected(self, client: AsyncModbusTcpClient) -> None:
+        if getattr(client, "connected", False):
+            return
+        connected = await client.connect()
+        if not connected:
+            raise RuntimeError("Modbus client connect failed")
+
     async def _read_u16(
         self,
         client: AsyncModbusTcpClient,
@@ -903,6 +915,7 @@ class EMSService:
         offset: int,
         input_reg: bool = False,
     ) -> int:
+        await self._ensure_connected(client)
         wire_address = address + offset
         if input_reg:
             rr = await client.read_input_registers(address=wire_address, count=1, slave=unit_id)
@@ -930,6 +943,7 @@ class EMSService:
         unit_id: int,
         offset: int,
     ) -> int:
+        await self._ensure_connected(client)
         wire_address = address + offset
         rr = await client.read_holding_registers(address=wire_address, count=2, slave=unit_id)
         if rr.isError():
@@ -948,6 +962,7 @@ class EMSService:
         unit_id: int,
         offset: int,
     ) -> None:
+        await self._ensure_connected(client)
         wire_address = address + offset
         wr = await client.write_register(address=wire_address, value=int(value) & 0xFFFF, slave=unit_id)
         if wr.isError():
