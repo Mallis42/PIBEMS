@@ -15,6 +15,10 @@ from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext, M
 from pymodbus.server import StartAsyncTcpServer
 
 
+_PURPLE = "\033[95m"
+_RESET  = "\033[0m"
+
+
 class _LoggingSlaveContext(ModbusSlaveContext):
     """Wraps ModbusSlaveContext to log every read/write the PCS makes via Modbus TCP.
 
@@ -26,20 +30,35 @@ class _LoggingSlaveContext(ModbusSlaveContext):
     # Maps pymodbus internal register-type codes to human names.
     _REG_NAMES = {1: "Coil", 2: "DiscreteInput", 3: "HoldingReg", 4: "InputReg"}
 
+    def __init__(self, *args: Any, register_labels: dict[int, dict[int, str]] | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._register_labels = register_labels or {}
+
+    def _label_range(self, reg_type: int, address: int, count: int) -> str:
+        labels = self._register_labels.get(reg_type, {})
+        parts: list[str] = []
+        for addr in range(address, address + max(1, count)):
+            label = labels.get(addr)
+            if label:
+                parts.append(f"{addr}:{label}")
+        return ", ".join(parts) if parts else "unmapped"
+
     def getValues(self, fc_as_hex: int, address: int, count: int = 1) -> list:
         values = super().getValues(fc_as_hex, address, count)
         reg = self._REG_NAMES.get(fc_as_hex, f"reg{fc_as_hex}")
+        reg_labels = self._label_range(fc_as_hex, address, count)
         logging.getLogger("pibems").info(
-            "EMS-SERVER  PCS-READ   %s  addr=%s count=%s  -> %s",
-            reg, address, count, values,
+            "%sEMS-SERVER  PCS-READ   %s  addr=%s count=%s labels=[%s]  -> %s%s",
+            _PURPLE, reg, address, count, reg_labels, values, _RESET,
         )
         return values
 
     def setValues(self, fc_as_hex: int, address: int, values: list) -> None:  # type: ignore[override]  
         reg = self._REG_NAMES.get(fc_as_hex, f"reg{fc_as_hex}")
+        reg_labels = self._label_range(fc_as_hex, address, len(values))
         logging.getLogger("pibems").debug(
-            "EMS-SERVER  INTERNAL-WRITE  %s  addr=%s  values=%s",
-            reg, address, values,
+            "%sEMS-SERVER  INTERNAL-WRITE  %s  addr=%s labels=[%s] values=%s%s",
+            _PURPLE, reg, address, reg_labels, values, _RESET,
         )
         super().setValues(fc_as_hex, address, values)
 
@@ -157,6 +176,50 @@ class EMSService:
         self.server_ctx: ModbusServerContext | None = None
         self.httpd: ThreadingHTTPServer | None = None
         self.http_thread: threading.Thread | None = None
+
+    def _build_ems_register_labels(self) -> dict[int, dict[int, str]]:
+        labels: dict[int, dict[int, str]] = {3: {}, 4: {}}
+
+        pcs_map = self.map.get("pcs", {})
+        for section_name in ("status", "limits", "control"):
+            section = pcs_map.get(section_name, {})
+            if not isinstance(section, dict):
+                continue
+            for point_name, point in section.items():
+                if not isinstance(point, dict):
+                    continue
+                ptype = str(point.get("type", "")).strip().lower()
+                address = point.get("address")
+                quantity = int(point.get("quantity", 1))
+                if not isinstance(address, int):
+                    continue
+
+                reg_type = 4 if ptype == "input" else 3 if ptype == "holding" else None
+                if reg_type is None:
+                    continue
+
+                for i in range(max(1, quantity)):
+                    addr = address + i
+                    suffix = f"[{i}]" if quantity > 1 else ""
+                    labels[reg_type][addr] = f"pcs.{section_name}.{point_name}{suffix}"
+
+        ems_defaults = self.map.get("ems_server", {})
+        input_defaults = ems_defaults.get("input_defaults", {}) if isinstance(ems_defaults, dict) else {}
+        holding_defaults = ems_defaults.get("holding_defaults", {}) if isinstance(ems_defaults, dict) else {}
+        for raw_addr in input_defaults:
+            try:
+                addr = int(raw_addr)
+            except (TypeError, ValueError):
+                continue
+            labels[4].setdefault(addr, f"ems_server.input_defaults.{addr}")
+        for raw_addr in holding_defaults:
+            try:
+                addr = int(raw_addr)
+            except (TypeError, ValueError):
+                continue
+            labels[3].setdefault(addr, f"ems_server.holding_defaults.{addr}")
+
+        return labels
 
     def _health_payload(self) -> dict[str, Any]:
         return {
@@ -640,7 +703,8 @@ class EMSService:
         # Large register spaces allow directly mirroring documented addresses.
         ir_block = ModbusSequentialDataBlock(0, [0] * 12000)
         hr_block = ModbusSequentialDataBlock(0, [0] * 12000)
-        store = _LoggingSlaveContext(ir=ir_block, hr=hr_block)
+        register_labels = self._build_ems_register_labels()
+        store = _LoggingSlaveContext(ir=ir_block, hr=hr_block, register_labels=register_labels)
         self.server_ctx = ModbusServerContext(slaves={self.opts.ems_unit_id: store}, single=False)
 
         for addr, value in input_defaults.items():
