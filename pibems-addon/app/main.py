@@ -19,6 +19,26 @@ from pymodbus.server import StartAsyncTcpServer
 _PURPLE = "\033[95m"
 _RESET  = "\033[0m"
 
+_HUAWEI_STATUS_MAP: dict[int, str] = {
+    0: "Standby",
+    1: "Standby: insulation check",
+    2: "Standby: irradiation check",
+    3: "Standby: grid check",
+    256: "Starting",
+    512: "On-grid",
+    513: "On-grid: power-limited",
+    514: "On-grid: self-derating",
+    768: "Shutdown: fault",
+    769: "Shutdown: command",
+    770: "Shutdown: OVGR",
+    1025: "Shutdown: no irradiation",
+    1536: "Spot-check ready",
+    1792: "Spot-checking",
+    2048: "Inspecting",
+    2304: "AFCI self-check",
+    40960: "On-grid",
+}
+
 
 class _LoggingSlaveContext(ModbusSlaveContext):
     """Wraps ModbusSlaveContext to log every read/write the PCS makes via Modbus TCP.
@@ -334,6 +354,9 @@ class EMSService:
             "last_pcs_error": self.state["status"].get("pcs_last_error"),
         }
 
+    def _decode_huawei_status(self, code: int) -> str:
+        return _HUAWEI_STATUS_MAP.get(code, f"Unknown ({code})")
+
     def _get_ui_html(self) -> str:
         def esc(value: Any) -> str:
             return html.escape(str(value), quote=True)
@@ -411,7 +434,7 @@ class EMSService:
                 "Huawei Inverter",
                 [
                     stat_row("Connection", indicator(bool(status.get("huawei_connected")), "Connected" if status.get("huawei_connected") else "Disconnected")),
-                    stat_row("Status", esc(fmt(huawei.get("device_status")))),
+                    stat_row("Status", esc(fmt(huawei.get("device_status_text") or huawei.get("device_status")))),
                     stat_row("Active Power", esc(fmt(huawei.get("active_power_kw"), " kW"))),
                     stat_row("Derate %", esc(fmt(control.get("huawei_derate_percent"), "%"))),
                 ],
@@ -822,6 +845,7 @@ class EMSService:
             meter = await self._read_i32(self.huawei_client, points["meter_active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
 
             self.state["huawei"]["device_status"] = status
+            self.state["huawei"]["device_status_text"] = f"{self._decode_huawei_status(status)} ({status})"
             self.state["huawei"]["active_power_kw"] = pwr / 1000.0
             self.state["huawei"]["meter_active_power_w"] = meter
             self.state["status"]["huawei_connected"] = True
