@@ -646,8 +646,15 @@ class EMSService:
 
     <script>
         function showTab(tabName, btn) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            var tabContents = document.querySelectorAll('.tab-content');
+            var tabButtons = document.querySelectorAll('.tab-btn');
+            var i;
+            for (i = 0; i < tabContents.length; i += 1) {
+                tabContents[i].classList.remove('active');
+            }
+            for (i = 0; i < tabButtons.length; i += 1) {
+                tabButtons[i].classList.remove('active');
+            }
             document.getElementById(tabName).classList.add('active');
             btn.classList.add('active');
         }
@@ -659,9 +666,9 @@ class EMSService:
         }
 
         function padRight(value, width) {
-            const text = String(value);
+            var text = String(value);
             if (text.length >= width) return text;
-            let padded = text;
+            var padded = text;
             while (padded.length < width) {
                 padded += ' ';
             }
@@ -669,23 +676,28 @@ class EMSService:
         }
 
         function formatAddressViewer(server) {
-            const view = server.address_view || {};
-            const lines = [];
+            var view = server.address_view || {};
+            var lines = [];
+            var inputEntries = view.input || [];
+            var holdingEntries = view.holding || [];
+            var i;
             lines.push('INPUT REGISTERS');
-            (view.input || []).forEach(entry => {
-                const inputValue = (entry.value === null || entry.value === undefined) ? '-' : String(entry.value);
-                lines.push(padRight(entry.address, 6) + ' = ' + padRight(inputValue, 8) + ' ' + entry.label);
-            });
+            for (i = 0; i < inputEntries.length; i += 1) {
+                var inputEntry = inputEntries[i];
+                var inputValue = (inputEntry.value === null || inputEntry.value === undefined) ? '-' : String(inputEntry.value);
+                lines.push(padRight(inputEntry.address, 6) + ' = ' + padRight(inputValue, 8) + ' ' + inputEntry.label);
+            }
             lines.push('');
             lines.push('HOLDING REGISTERS');
-            (view.holding || []).forEach(entry => {
-                const holdingValue = (entry.value === null || entry.value === undefined) ? '-' : String(entry.value);
-                lines.push(padRight(entry.address, 6) + ' = ' + padRight(holdingValue, 8) + ' ' + entry.label);
-            });
+            for (i = 0; i < holdingEntries.length; i += 1) {
+                var holdingEntry = holdingEntries[i];
+                var holdingValue = (holdingEntry.value === null || holdingEntry.value === undefined) ? '-' : String(holdingEntry.value);
+                lines.push(padRight(holdingEntry.address, 6) + ' = ' + padRight(holdingValue, 8) + ' ' + holdingEntry.label);
+            }
             lines.push('');
-            const inputReadCount = (server.input_read_count === null || server.input_read_count === undefined) ? 0 : server.input_read_count;
-            const holdingReadCount = (server.holding_read_count === null || server.holding_read_count === undefined) ? 0 : server.holding_read_count;
-            const writeCount = (server.write_count === null || server.write_count === undefined) ? 0 : server.write_count;
+            var inputReadCount = (server.input_read_count === null || server.input_read_count === undefined) ? 0 : server.input_read_count;
+            var holdingReadCount = (server.holding_read_count === null || server.holding_read_count === undefined) ? 0 : server.holding_read_count;
+            var writeCount = (server.write_count === null || server.write_count === undefined) ? 0 : server.write_count;
             lines.push('READ COUNTS: input=' + String(inputReadCount) + ' holding=' + String(holdingReadCount) + ' writes=' + String(writeCount));
             if (server.last_holding_read) {
                 lines.push('LAST HOLDING READ: addr=' + String(server.last_holding_read.address) + ' values=' + JSON.stringify(server.last_holding_read.values));
@@ -699,68 +711,78 @@ class EMSService:
             return lines.join('\n');
         }
 
-        async function updateDashboard() {
-            try {
-                const base = window.location.pathname.replace(/[/]?$/, '/');
-                const resp = await fetch(base + 'api/diagnostics');
-                const data = await resp.json();
-                const now = new Date().toLocaleTimeString();
+        function applyDashboardData(data) {
+            var now = new Date().toLocaleTimeString();
+            var hwConn = data.status.huawei_connected;
+            var pcsConn = data.status.pcs_connected;
+            var gridAvail = data.grid.is_available;
+            var srv = data.server || {};
+            var srvRunning = srv.running === true;
 
-                // Update Huawei
-                const hw_conn = data.status.huawei_connected;
-                document.getElementById('huawei-status').className = 'status-indicator ' + (hw_conn ? 'connected' : 'disconnected');
-                document.getElementById('huawei-status-text').textContent = hw_conn ? 'Connected' : 'Disconnected';
-                document.getElementById('huawei-device-status').textContent = formatValue(data.huawei.device_status);
-                document.getElementById('huawei-power').textContent = formatValue(data.huawei.active_power_kw) + ' kW';
-                document.getElementById('huawei-derate').textContent = formatValue(data.control.huawei_derate_percent) + '%';
-                document.getElementById('huawei-error').textContent = data.status.huawei_last_error ? '⚠️ ' + data.status.huawei_last_error : '';
+            document.getElementById('huawei-status').className = 'status-indicator ' + (hwConn ? 'connected' : 'disconnected');
+            document.getElementById('huawei-status-text').textContent = hwConn ? 'Connected' : 'Disconnected';
+            document.getElementById('huawei-device-status').textContent = formatValue(data.huawei.device_status);
+            document.getElementById('huawei-power').textContent = formatValue(data.huawei.active_power_kw) + ' kW';
+            document.getElementById('huawei-derate').textContent = formatValue(data.control.huawei_derate_percent) + '%';
+            document.getElementById('huawei-error').textContent = data.status.huawei_last_error ? '⚠️ ' + data.status.huawei_last_error : '';
 
-                // Update PCS
-                const pcs_conn = data.status.pcs_connected;
-                document.getElementById('pcs-status').className = 'status-indicator ' + (pcs_conn ? 'connected' : 'disconnected');
-                document.getElementById('pcs-status-text').textContent = pcs_conn ? 'Connected' : 'Disconnected';
-                document.getElementById('pcs-soc').textContent = formatValue(data.pcs.soc) + ' %';
-                document.getElementById('pcs-power').textContent = formatValue(data.pcs.load_active_power_kw) + ' kW';
-                document.getElementById('pcs-meter-power').textContent = formatValue(data.pcs.total_power_meter_kw) + ' kW';
-                document.getElementById('pcs-error').textContent = data.status.pcs_last_error ? '⚠️ ' + data.status.pcs_last_error : '';
+            document.getElementById('pcs-status').className = 'status-indicator ' + (pcsConn ? 'connected' : 'disconnected');
+            document.getElementById('pcs-status-text').textContent = pcsConn ? 'Connected' : 'Disconnected';
+            document.getElementById('pcs-soc').textContent = formatValue(data.pcs.soc) + ' %';
+            document.getElementById('pcs-power').textContent = formatValue(data.pcs.load_active_power_kw) + ' kW';
+            document.getElementById('pcs-meter-power').textContent = formatValue(data.pcs.total_power_meter_kw) + ' kW';
+            document.getElementById('pcs-error').textContent = data.status.pcs_last_error ? '⚠️ ' + data.status.pcs_last_error : '';
 
-                // Update Grid
-                const grid_avail = data.grid.is_available;
-                document.getElementById('grid-status').className = 'status-indicator ' + (grid_avail ? 'connected' : 'disconnected');
-                document.getElementById('grid-status-text').textContent = grid_avail ? 'Online' : 'Offline';
-                document.getElementById('grid-voltage').textContent = formatValue(data.grid.avg_voltage_v) + ' V';
-                document.getElementById('ems-comm-fail').textContent = data.pcs.ems_comm_failure ? 'Yes' : 'No';
+            document.getElementById('grid-status').className = 'status-indicator ' + (gridAvail ? 'connected' : 'disconnected');
+            document.getElementById('grid-status-text').textContent = gridAvail ? 'Online' : 'Offline';
+            document.getElementById('grid-voltage').textContent = formatValue(data.grid.avg_voltage_v) + ' V';
+            document.getElementById('ems-comm-fail').textContent = data.pcs.ems_comm_failure ? 'Yes' : 'No';
 
-                // Update Control
-                document.getElementById('operation-mode').textContent = data.control.operation_mode;
-                document.getElementById('target-power').textContent = formatValue(data.control.target_power_kw) + ' kW';
-                document.getElementById('effective-power').textContent = formatValue(data.control.effective_target_power_kw) + ' kW';
-                document.getElementById('charge-limit').textContent = formatValue(data.control.dynamic_charge_limit_kw) + ' kW';
-                document.getElementById('policy-reason').textContent = formatValue(data.control.policy_reason);
+            document.getElementById('operation-mode').textContent = data.control.operation_mode;
+            document.getElementById('target-power').textContent = formatValue(data.control.target_power_kw) + ' kW';
+            document.getElementById('effective-power').textContent = formatValue(data.control.effective_target_power_kw) + ' kW';
+            document.getElementById('charge-limit').textContent = formatValue(data.control.dynamic_charge_limit_kw) + ' kW';
+            document.getElementById('policy-reason').textContent = formatValue(data.control.policy_reason);
 
-                // Update Battery Limits
-                document.getElementById('bms-charge-voltage').textContent = formatValue(data.pcs.bms_charge_voltage_limit_v) + ' V';
-                document.getElementById('bms-charge-current').textContent = formatValue(data.pcs.bms_charge_current_limit_a) + ' A';
-                document.getElementById('auto-mode').textContent = data.control.auto_mode_enabled ? 'Enabled' : 'Disabled';
+            document.getElementById('bms-charge-voltage').textContent = formatValue(data.pcs.bms_charge_voltage_limit_v) + ' V';
+            document.getElementById('bms-charge-current').textContent = formatValue(data.pcs.bms_charge_current_limit_a) + ' A';
+            document.getElementById('auto-mode').textContent = data.control.auto_mode_enabled ? 'Enabled' : 'Disabled';
 
-                // Update EMS Modbus Server
-                const srv = data.server || {};
-                document.getElementById('ems-srv-enabled').textContent = srv.enabled ? 'Yes' : 'No';
-                const srvRunning = srv.running === true;
-                document.getElementById('ems-srv-status').className = 'status-indicator ' + (srvRunning ? 'connected' : 'disconnected');
-                document.getElementById('ems-srv-status-text').textContent = srvRunning ? 'Running' : (srv.enabled ? 'Starting...' : 'Disabled');
-                document.getElementById('ems-srv-port').textContent = srv.port !== undefined ? String(srv.port) : '-';
-                document.getElementById('ems-srv-unit').textContent = srv.unit_id !== undefined ? String(srv.unit_id) : '-';
-                document.getElementById('ems-srv-clients').textContent = srv.connected_clients !== undefined ? String(srv.connected_clients) : '-';
-                document.getElementById('ems-address-viewer').textContent = formatAddressViewer(srv);
+            document.getElementById('ems-srv-enabled').textContent = srv.enabled ? 'Yes' : 'No';
+            document.getElementById('ems-srv-status').className = 'status-indicator ' + (srvRunning ? 'connected' : 'disconnected');
+            document.getElementById('ems-srv-status-text').textContent = srvRunning ? 'Running' : (srv.enabled ? 'Starting...' : 'Disabled');
+            document.getElementById('ems-srv-port').textContent = srv.port !== undefined ? String(srv.port) : '-';
+            document.getElementById('ems-srv-unit').textContent = srv.unit_id !== undefined ? String(srv.unit_id) : '-';
+            document.getElementById('ems-srv-clients').textContent = srv.connected_clients !== undefined ? String(srv.connected_clients) : '-';
+            document.getElementById('ems-address-viewer').textContent = formatAddressViewer(srv);
 
-                document.getElementById('last-update').textContent = now;
-                document.getElementById('debug-panel').textContent = JSON.stringify(data, null, 2);
-                document.getElementById('debug-update').textContent = now;
-            } catch (err) {
-                console.error('Update failed:', err);
-                document.getElementById('debug-panel').textContent = 'Error: ' + err.message;
-            }
+            document.getElementById('last-update').textContent = now;
+            document.getElementById('debug-panel').textContent = JSON.stringify(data, null, 2);
+            document.getElementById('debug-update').textContent = now;
+        }
+
+        function updateDashboard() {
+            var base = window.location.pathname.replace(/[/]?$/, '/');
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', base + 'api/diagnostics', true);
+            xhr.onreadystatechange = function() {
+                var data;
+                if (xhr.readyState !== 4) {
+                    return;
+                }
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    document.getElementById('debug-panel').textContent = 'Error: HTTP ' + xhr.status;
+                    return;
+                }
+                try {
+                    data = JSON.parse(xhr.responseText);
+                    applyDashboardData(data);
+                } catch (err) {
+                    console.error('Update failed:', err);
+                    document.getElementById('debug-panel').textContent = 'Error: ' + err.message;
+                }
+            };
+            xhr.send();
         }
 
         updateDashboard();
