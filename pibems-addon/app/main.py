@@ -30,10 +30,18 @@ class _LoggingSlaveContext(ModbusSlaveContext):
     # Maps pymodbus internal register-type codes to human names.
     _REG_NAMES = {1: "Coil", 2: "DiscreteInput", 3: "HoldingReg", 4: "InputReg"}
 
-    def __init__(self, *args: Any, register_labels: dict[int, dict[int, str]] | None = None, on_external_read: Any = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        register_labels: dict[int, dict[int, str]] | None = None,
+        on_external_read: Any = None,
+        on_external_write: Any = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._register_labels = register_labels or {}
         self._on_external_read = on_external_read
+        self._on_external_write = on_external_write
 
     def _label_range(self, reg_type: int, address: int, count: int) -> str:
         labels = self._register_labels.get(reg_type, {})
@@ -48,12 +56,13 @@ class _LoggingSlaveContext(ModbusSlaveContext):
         values = super().getValues(fc_as_hex, address, count)
         reg = self._REG_NAMES.get(fc_as_hex, f"reg{fc_as_hex}")
         reg_labels = self._label_range(fc_as_hex, address, count)
+        action = "PCS-CMD-READ" if fc_as_hex == 3 else "PCS-INPUT-READ" if fc_as_hex == 4 else "PCS-READ"
         logging.getLogger("pibems").info(
-            "%sEMS-SERVER  PCS-READ   %s  addr=%s count=%s labels=[%s]  -> %s%s",
-            _PURPLE, reg, address, count, reg_labels, values, _RESET,
+            "%sEMS-SERVER  %s  %s  addr=%s count=%s labels=[%s]  -> %s%s",
+            _PURPLE, action, reg, address, count, reg_labels, values, _RESET,
         )
         if self._on_external_read is not None:
-            self._on_external_read()
+            self._on_external_read(fc_as_hex, address, count, values)
         return values
 
     def setValues(self, fc_as_hex: int, address: int, values: list, *, _internal: bool = False) -> None:  # type: ignore[override]
@@ -69,7 +78,20 @@ class _LoggingSlaveContext(ModbusSlaveContext):
                 "%sEMS-SERVER  PCS-WRITE  %s  addr=%s labels=[%s] values=%s%s",
                 _PURPLE, reg, address, reg_labels, values, _RESET,
             )
+            if self._on_external_write is not None:
+                self._on_external_write(fc_as_hex, address, values)
         super().setValues(fc_as_hex, address, values)
+
+    def snapshot_addresses(self, reg_type: int, addresses: list[int]) -> dict[int, int]:
+        values: dict[int, int] = {}
+        for address in sorted(set(addresses)):
+            try:
+                raw = super().getValues(reg_type, address, 1)
+            except Exception:
+                continue
+            if raw:
+                values[address] = int(raw[0])
+        return values
 
 _LOG = logging.getLogger("pibems")
 logging.basicConfig(
@@ -172,6 +194,16 @@ class EMSService:
                 "port": opts.ems_bind_port,
                 "running": False,
                 "connected_clients": 0,
+                "last_input_read": None,
+                "last_holding_read": None,
+                "last_write": None,
+                "input_read_count": 0,
+                "holding_read_count": 0,
+                "write_count": 0,
+                "address_view": {
+                    "input": [],
+                    "holding": [],
+                },
             },
             "grid": {
                 "is_available": True,
@@ -185,6 +217,8 @@ class EMSService:
         self.pcs_client = AsyncModbusTcpClient(host=opts.pcs_host, port=opts.pcs_port)
 
         self.server_ctx: ModbusServerContext | None = None
+        self.server_store: _LoggingSlaveContext | None = None
+        self.server_register_labels = self._build_ems_register_labels()
         self.httpd: ThreadingHTTPServer | None = None
         self.http_thread: threading.Thread | None = None
 
@@ -232,10 +266,53 @@ class EMSService:
 
         return labels
 
-    def _on_pcs_ems_contact(self) -> None:
+    def _refresh_server_address_view(self) -> None:
+        if self.server_store is None:
+            return
+
+        def build_entries(reg_type: int) -> list[dict[str, Any]]:
+            labels = self.server_register_labels.get(reg_type, {})
+            values = self.server_store.snapshot_addresses(reg_type, list(labels.keys()))
+            entries: list[dict[str, Any]] = []
+            for address in sorted(labels):
+                value = values.get(address)
+                entries.append({
+                    "address": address,
+                    "label": labels[address],
+                    "value": value,
+                })
+            return entries
+
+        self.state["server"]["address_view"] = {
+            "input": build_entries(4),
+            "holding": build_entries(3),
+        }
+
+    def _on_pcs_ems_contact(self, reg_type: int, address: int, count: int, values: list[int]) -> None:
         """Called whenever the PCS successfully reads from our EMS Modbus server."""
         self.state["status"]["pcs_connected"] = True
         self.state["status"]["pcs_last_error"] = None
+        key = "last_holding_read" if reg_type == 3 else "last_input_read"
+        count_key = "holding_read_count" if reg_type == 3 else "input_read_count"
+        self.state["server"][count_key] = int(self.state["server"].get(count_key, 0)) + 1
+        self.state["server"][key] = {
+            "address": address,
+            "count": count,
+            "values": list(values),
+            "time": _now_iso(),
+        }
+        self._refresh_server_address_view()
+
+    def _on_pcs_ems_write(self, reg_type: int, address: int, values: list[int]) -> None:
+        self.state["server"]["write_count"] = int(self.state["server"].get("write_count", 0)) + 1
+        self.state["server"]["last_write"] = {
+            "reg_type": reg_type,
+            "address": address,
+            "count": len(values),
+            "values": list(values),
+            "time": _now_iso(),
+        }
+        self._refresh_server_address_view()
 
     def _health_payload(self) -> dict[str, Any]:
         return {
@@ -554,6 +631,10 @@ class EMSService:
                 <div class="debug-panel" id="debug-panel">Loading...</div>
                 <div class="last-update">Last update: <span id="debug-update">Never</span></div>
             </div>
+            <div class="card full active">
+                <h2>🧭 EMS Address Viewer</h2>
+                <div class="debug-panel" id="ems-address-viewer">Loading...</div>
+            </div>
         </div>
     </div>
 
@@ -571,9 +652,35 @@ class EMSService:
             return String(val);
         }
 
+        function formatAddressViewer(server) {
+            const view = server.address_view || {};
+            const lines = [];
+            lines.push('INPUT REGISTERS');
+            (view.input || []).forEach(entry => {
+                lines.push(String(entry.address).padEnd(6) + ' = ' + String(entry.value ?? '-') .padEnd(8) + ' ' + entry.label);
+            });
+            lines.push('');
+            lines.push('HOLDING REGISTERS');
+            (view.holding || []).forEach(entry => {
+                lines.push(String(entry.address).padEnd(6) + ' = ' + String(entry.value ?? '-') .padEnd(8) + ' ' + entry.label);
+            });
+            lines.push('');
+            lines.push('READ COUNTS: input=' + String(server.input_read_count ?? 0) + ' holding=' + String(server.holding_read_count ?? 0) + ' writes=' + String(server.write_count ?? 0));
+            if (server.last_holding_read) {
+                lines.push('LAST HOLDING READ: addr=' + String(server.last_holding_read.address) + ' values=' + JSON.stringify(server.last_holding_read.values));
+            }
+            if (server.last_input_read) {
+                lines.push('LAST INPUT READ: addr=' + String(server.last_input_read.address) + ' values=' + JSON.stringify(server.last_input_read.values));
+            }
+            if (server.last_write) {
+                lines.push('LAST WRITE: addr=' + String(server.last_write.address) + ' values=' + JSON.stringify(server.last_write.values));
+            }
+            return lines.join('\n');
+        }
+
         async function updateDashboard() {
             try {
-                const base = window.location.pathname.replace(/\/?$/, '/');
+                const base = window.location.pathname.replace(/[/]?$/, '/');
                 const resp = await fetch(base + 'api/diagnostics');
                 const data = await resp.json();
                 const now = new Date().toLocaleTimeString();
@@ -624,6 +731,7 @@ class EMSService:
                 document.getElementById('ems-srv-port').textContent = srv.port !== undefined ? String(srv.port) : '-';
                 document.getElementById('ems-srv-unit').textContent = srv.unit_id !== undefined ? String(srv.unit_id) : '-';
                 document.getElementById('ems-srv-clients').textContent = srv.connected_clients !== undefined ? String(srv.connected_clients) : '-';
+                document.getElementById('ems-address-viewer').textContent = formatAddressViewer(srv);
 
                 document.getElementById('last-update').textContent = now;
                 document.getElementById('debug-panel').textContent = JSON.stringify(data, null, 2);
@@ -759,17 +867,25 @@ class EMSService:
         # Large register spaces allow directly mirroring documented addresses.
         ir_block = ModbusSequentialDataBlock(0, [0] * 12000)
         hr_block = ModbusSequentialDataBlock(0, [0] * 12000)
-        register_labels = self._build_ems_register_labels()
+        register_labels = self.server_register_labels
         # single=True makes the server respond to ANY Modbus unit_id the PCS sends.
         # This is correct EMS server behaviour - a real EMS accepts all slaves.
         # single=False with a keyed dict would silently reject unit_ids that don't match.
-        store = _LoggingSlaveContext(ir=ir_block, hr=hr_block, register_labels=register_labels, on_external_read=self._on_pcs_ems_contact)
+        store = _LoggingSlaveContext(
+            ir=ir_block,
+            hr=hr_block,
+            register_labels=register_labels,
+            on_external_read=self._on_pcs_ems_contact,
+            on_external_write=self._on_pcs_ems_write,
+        )
         self.server_ctx = ModbusServerContext(slaves={0: store}, single=True)
+        self.server_store = store
 
         for addr, value in input_defaults.items():
-            store.setValues(4, addr, [value])
+            store.setValues(4, addr, [value], _internal=True)
         for addr, value in holding_defaults.items():
-            store.setValues(3, addr, [value])
+            store.setValues(3, addr, [value], _internal=True)
+        self._refresh_server_address_view()
 
         _LOG.info(
             "Starting EMS Modbus server on %s:%s unit=%s",
@@ -827,6 +943,7 @@ class EMSService:
                 self.server_ctx[self.opts.ems_unit_id].setValues(4, 2326, [0], _internal=True)
                 self.server_ctx[self.opts.ems_unit_id].setValues(4, 2327, [0], _internal=True)
                 self.server_ctx[self.opts.ems_unit_id].setValues(4, 2328, [0], _internal=True)
+                self._refresh_server_address_view()
 
             await asyncio.sleep(self.opts.heartbeat_interval_sec)
 
@@ -969,6 +1086,7 @@ class EMSService:
             ctx.setValues(3, control["discharge_stop_soc"]["address"],    [self.opts.outage_reserve_soc],        _internal=True)
             ctx.setValues(3, control["charge_stop_soc"]["address"],       [self.opts.outage_max_soc_from_huawei], _internal=True)
             ctx.setValues(3, control["constant_power_command"]["address"],[raw_cmd],         _internal=True)
+            self._refresh_server_address_view()
         else:
             # Direct TCP mode: connect to PCS Modbus TCP server.
             await self._write_u16(self.pcs_client, control["grid_connected_mode"]["address"], 3, self.opts.pcs_unit_id, self.opts.pcs_address_offset)
