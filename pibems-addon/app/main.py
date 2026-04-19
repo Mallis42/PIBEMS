@@ -14,11 +14,42 @@ from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext, ModbusSlaveContext
 from pymodbus.server import StartAsyncTcpServer
 
+
+class _LoggingSlaveContext(ModbusSlaveContext):
+    """Wraps ModbusSlaveContext to log every read/write the PCS makes."""
+
+    _FC_NAMES = {
+        1: "ReadCoils", 2: "ReadDiscreteInputs",
+        3: "ReadHoldingRegs", 4: "ReadInputRegs",
+        5: "WriteCoil", 6: "WriteHoldingReg",
+        15: "WriteMultipleCoils", 16: "WriteMultipleRegs",
+    }
+
+    def getValues(self, fc_as_hex: int, address: int, count: int = 1) -> list:
+        values = super().getValues(fc_as_hex, address, count)
+        fc_name = self._FC_NAMES.get(fc_as_hex, f"FC{fc_as_hex}")
+        _LOG.info(
+            "EMS-SERVER RX  %s  addr=%s count=%s  -> %s",
+            fc_name, address, count, values,
+        )
+        return values
+
+    def setValues(self, fc_as_hex: int, address: int, values: list) -> None:  # type: ignore[override]
+        fc_name = self._FC_NAMES.get(fc_as_hex, f"FC{fc_as_hex}")
+        _LOG.info(
+            "EMS-SERVER WX  %s  addr=%s  values=%s",
+            fc_name, address, values,
+        )
+        super().setValues(fc_as_hex, address, values)
+
 _LOG = logging.getLogger("pibems")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s | %(message)s",
 )
+# Show pymodbus server connection events (client connect/disconnect)
+logging.getLogger("pymodbus.server").setLevel(logging.INFO)
+logging.getLogger("pymodbus").setLevel(logging.WARNING)
 
 
 def _now_iso() -> str:
@@ -608,7 +639,7 @@ class EMSService:
         # Large register spaces allow directly mirroring documented addresses.
         ir_block = ModbusSequentialDataBlock(0, [0] * 12000)
         hr_block = ModbusSequentialDataBlock(0, [0] * 12000)
-        store = ModbusSlaveContext(ir=ir_block, hr=hr_block)
+        store = _LoggingSlaveContext(ir=ir_block, hr=hr_block)
         self.server_ctx = ModbusServerContext(slaves={self.opts.ems_unit_id: store}, single=False)
 
         for addr, value in input_defaults.items():
