@@ -68,7 +68,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s | %(message)s",
 )
 # Show pymodbus server connection events (client connect/disconnect)
-logging.getLogger("pymodbus.server").setLevel(logging.INFO)
+logging.getLogger("pymodbus.server").setLevel(logging.DEBUG)
 logging.getLogger("pymodbus").setLevel(logging.WARNING)
 
 
@@ -161,6 +161,8 @@ class EMSService:
                 "enabled": opts.enable_ems_server,
                 "unit_id": opts.ems_unit_id,
                 "port": opts.ems_bind_port,
+                "running": False,
+                "connected_clients": 0,
             },
             "grid": {
                 "is_available": True,
@@ -366,6 +368,12 @@ class EMSService:
             white-space: pre-wrap;
             word-break: break-word;
         }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
         .last-update {
             text-align: center;
             font-size: 0.85em;
@@ -393,8 +401,8 @@ class EMSService:
         <h1>⚡ PIBEMS Dashboard</h1>
         
         <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('status')">Status</button>
-            <button class="tab-btn" onclick="showTab('debug')">Debug</button>
+            <button class="tab-btn active" onclick="showTab('status', this)">Status</button>
+            <button class="tab-btn" onclick="showTab('debug', this)">Debug</button>
         </div>
 
         <div id="status" class="tab-content active">
@@ -496,6 +504,30 @@ class EMSService:
                         <span class="stat-value" id="auto-mode">-</span>
                     </div>
                 </div>
+
+                <div class="card active">
+                    <h2>🖧 EMS Modbus Server</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Enabled:</span>
+                        <span class="stat-value" id="ems-srv-enabled">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Status:</span>
+                        <span><span id="ems-srv-status" class="status-indicator disconnected"></span><span id="ems-srv-status-text">-</span></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Port:</span>
+                        <span class="stat-value" id="ems-srv-port">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Unit ID:</span>
+                        <span class="stat-value" id="ems-srv-unit">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Clients:</span>
+                        <span class="stat-value" id="ems-srv-clients">-</span>
+                    </div>
+                </div>
             </div>
             <div class="card full active">
                 <div class="last-update">Last update: <span id="last-update">Never</span></div>
@@ -503,7 +535,7 @@ class EMSService:
         </div>
 
         <div id="debug" class="tab-content">
-            <div class="card full">
+            <div class="card full active">
                 <h2>🐞 Raw Diagnostics JSON</h2>
                 <div class="debug-panel" id="debug-panel">Loading...</div>
                 <div class="last-update">Last update: <span id="debug-update">Never</span></div>
@@ -512,11 +544,11 @@ class EMSService:
     </div>
 
     <script>
-        function showTab(tabName) {
+        function showTab(tabName, btn) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
+            btn.classList.add('active');
         }
 
         function formatValue(val) {
@@ -568,6 +600,16 @@ class EMSService:
                 document.getElementById('bms-charge-voltage').textContent = formatValue(data.pcs.bms_charge_voltage_limit_v) + ' V';
                 document.getElementById('bms-charge-current').textContent = formatValue(data.pcs.bms_charge_current_limit_a) + ' A';
                 document.getElementById('auto-mode').textContent = data.control.auto_mode_enabled ? 'Enabled' : 'Disabled';
+
+                // Update EMS Modbus Server
+                const srv = data.server || {};
+                document.getElementById('ems-srv-enabled').textContent = srv.enabled ? 'Yes' : 'No';
+                const srvRunning = srv.running === true;
+                document.getElementById('ems-srv-status').className = 'status-indicator ' + (srvRunning ? 'connected' : 'disconnected');
+                document.getElementById('ems-srv-status-text').textContent = srvRunning ? 'Running' : (srv.enabled ? 'Starting...' : 'Disabled');
+                document.getElementById('ems-srv-port').textContent = srv.port !== undefined ? String(srv.port) : '-';
+                document.getElementById('ems-srv-unit').textContent = srv.unit_id !== undefined ? String(srv.unit_id) : '-';
+                document.getElementById('ems-srv-clients').textContent = srv.connected_clients !== undefined ? String(srv.connected_clients) : '-';
 
                 document.getElementById('last-update').textContent = now;
                 document.getElementById('debug-panel').textContent = JSON.stringify(data, null, 2);
@@ -704,8 +746,11 @@ class EMSService:
         ir_block = ModbusSequentialDataBlock(0, [0] * 12000)
         hr_block = ModbusSequentialDataBlock(0, [0] * 12000)
         register_labels = self._build_ems_register_labels()
+        # single=True makes the server respond to ANY Modbus unit_id the PCS sends.
+        # This is correct EMS server behaviour - a real EMS accepts all slaves.
+        # single=False with a keyed dict would silently reject unit_ids that don't match.
         store = _LoggingSlaveContext(ir=ir_block, hr=hr_block, register_labels=register_labels)
-        self.server_ctx = ModbusServerContext(slaves={self.opts.ems_unit_id: store}, single=False)
+        self.server_ctx = ModbusServerContext(slaves={0: store}, single=True)
 
         for addr, value in input_defaults.items():
             store.setValues(4, addr, [value])
@@ -718,10 +763,14 @@ class EMSService:
             self.opts.ems_bind_port,
             self.opts.ems_unit_id,
         )
-        await StartAsyncTcpServer(
-            context=self.server_ctx,
-            address=(self.opts.ems_bind_host, self.opts.ems_bind_port),
-        )
+        self.state["server"]["running"] = True
+        try:
+            await StartAsyncTcpServer(
+                context=self.server_ctx,
+                address=(self.opts.ems_bind_host, self.opts.ems_bind_port),
+            )
+        finally:
+            self.state["server"]["running"] = False
 
     async def _poll_loop(self) -> None:
         while not self.stop_event.is_set():
