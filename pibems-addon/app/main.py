@@ -432,7 +432,7 @@ class EMSService:
 
         async function updateDashboard() {
             try {
-                const resp = await fetch('/api/diagnostics');
+                const resp = await fetch('api/diagnostics');
                 const data = await resp.json();
                 const now = new Date().toLocaleTimeString();
 
