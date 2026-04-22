@@ -620,7 +620,10 @@ class EMSService:
             clearResults();
             showLoading('Scanning ' + (endAddr - startAddr + 1) + ' registers...');
             
-            fetch('/api/scan', {
+            // Try both /scan and /api/scan paths for compatibility with HA ingress
+            const scanPath = window.location.pathname.includes('/api/') ? '/api/scan' : '/scan';
+            
+            fetch(scanPath, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -984,7 +987,7 @@ class EMSService:
 <body>
     <div class="container">
         <h1>PIBEMS Dashboard</h1>
-        <div class="refresh-note">Server-rendered view. Auto-refresh every 3 seconds. | <a href="/api/scanner" style="color: white; text-decoration: underline;">Modbus Scanner</a></div>
+        <div class="refresh-note">Server-rendered view. Auto-refresh every 3 seconds. | <a href="scanner" style="color: white; text-decoration: underline;">Modbus Scanner</a></div>
         <div class="last-update">Last update: {esc(now)}</div>
         <div class="content">
             {''.join(cards)}
@@ -1032,7 +1035,7 @@ class EMSService:
                 if path == "/api/diagnostics":
                     self._send_json(200, service.state)
                     return
-                if path == "/api/scanner":
+                if path in ("/api/scanner", "/scanner"):
                     html = service._get_scanner_html()
                     body = html.encode("utf-8")
                     self.send_response(200)
@@ -1054,7 +1057,7 @@ class EMSService:
 
             def do_POST(self) -> None:  # noqa: N802
                 path = self.path.split("?")[0].rstrip("/") or "/"
-                if path == "/api/scan":
+                if path in ("/api/scan", "/scan"):
                     try:
                         length = int(self.headers.get("Content-Length", "0"))
                         raw = self.rfile.read(length).decode("utf-8")
