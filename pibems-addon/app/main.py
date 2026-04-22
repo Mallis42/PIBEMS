@@ -201,6 +201,7 @@ class EMSService:
         self.map = register_map
         self.stop_event = asyncio.Event()
         self.heartbeat_counter = 0
+        self.loop: asyncio.AbstractEventLoop | None = None  # Will be set in run()
 
         self.state: dict[str, Any] = {
             "status": {
@@ -370,6 +371,345 @@ class EMSService:
 
     def _decode_huawei_status(self, code: int) -> str:
         return _HUAWEI_STATUS_MAP.get(code, f"Unknown ({code})")
+
+    def _get_scanner_html(self) -> str:
+        """Generate HTML for Modbus register scanner UI."""
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIBEMS Modbus Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .back-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr auto;
+            gap: 10px;
+            align-items: flex-end;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #1e3c72;
+            box-shadow: 0 0 0 2px rgba(30,60,114,0.1);
+        }
+        button {
+            background: #2a5298;
+            color: white;
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1e3c72;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #2a5298;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .results-table thead {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        .results-table th {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #ddd;
+        }
+        .results-table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .results-table tr:hover {
+            background: #fafafa;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            font-weight: 600;
+        }
+        .failed {
+            background: #f8d7da;
+            color: #721c24;
+            font-weight: 600;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            border-left: 4px solid #2a5298;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2a5298;
+        }
+        .error {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .success-msg {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Dashboard</a>
+        <h1>Modbus Register Scanner</h1>
+        
+        <div class="card">
+            <div class="form-group">
+                <div>
+                    <label for="device">Device:</label>
+                    <select id="device">
+                        <option value="pcs">PCS</option>
+                        <option value="huawei">Huawei</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="regType">Register Type:</label>
+                    <select id="regType">
+                        <option value="input">Input</option>
+                        <option value="holding">Holding</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="startAddr">Start Address:</label>
+                    <input type="number" id="startAddr" value="2100" min="0" max="65535">
+                </div>
+                <div>
+                    <label for="endAddr">End Address:</label>
+                    <input type="number" id="endAddr" value="2500" min="0" max="65535">
+                </div>
+                <button onclick="startScan()">Scan</button>
+            </div>
+            
+            <div id="statusArea"></div>
+            
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script>
+        let scanInProgress = false;
+
+        function startScan() {
+            const device = document.getElementById('device').value;
+            const regType = document.getElementById('regType').value;
+            const startAddr = parseInt(document.getElementById('startAddr').value);
+            const endAddr = parseInt(document.getElementById('endAddr').value);
+            
+            if (!device || startAddr === null || endAddr === null) {
+                showError('Please fill in all fields');
+                return;
+            }
+            
+            if (startAddr > endAddr) {
+                showError('Start address must be less than or equal to end address');
+                return;
+            }
+            
+            if (endAddr - startAddr > 1000) {
+                showError('Scan range too large (max 1000 registers)');
+                return;
+            }
+            
+            scanInProgress = true;
+            clearResults();
+            showLoading('Scanning ' + (endAddr - startAddr + 1) + ' registers...');
+            
+            fetch('/api/scan', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    device: device,
+                    start_addr: startAddr,
+                    end_addr: endAddr,
+                    reg_type: regType
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showError(data.error);
+                } else {
+                    displayResults(data);
+                }
+            })
+            .catch(err => showError('Scan failed: ' + err))
+            .finally(() => {
+                scanInProgress = false;
+            });
+        }
+
+        function displayResults(data) {
+            const results = data.results || {};
+            const addresses = Object.keys(results).map(Number).sort((a, b) => a - b);
+            
+            const successful = addresses.filter(addr => results[addr].success).length;
+            const failed = addresses.length - successful;
+            
+            let html = '';
+            html += '<div class="stats">';
+            html += '<div class="stat-box"><div class="stat-label">Total</div><div class="stat-value">' + addresses.length + '</div></div>';
+            html += '<div class="stat-box"><div class="stat-label">✓ Success</div><div class="stat-value" style="color: #28a745;">' + successful + '</div></div>';
+            html += '<div class="stat-box"><div class="stat-label">✗ Failed</div><div class="stat-value" style="color: #dc3545;">' + failed + '</div></div>';
+            html += '</div>';
+            
+            html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + data.address_offset + '</div>';
+            
+            html += '<table class="results-table">';
+            html += '<thead><tr><th>Address</th><th>Status</th><th>Value</th></tr></thead>';
+            html += '<tbody>';
+            
+            addresses.forEach(addr => {
+                const result = results[addr];
+                const statusClass = result.success ? 'success' : 'failed';
+                const statusText = result.success ? '✓ Success' : '✗ Failed';
+                const valueText = result.success ? result.value : result.error;
+                
+                html += '<tr>';
+                html += '<td><strong>' + addr + '</strong></td>';
+                html += '<td class="' + statusClass + '">' + statusText + '</td>';
+                html += '<td>' + valueText + '</td>';
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            
+            if (successful > 0) {
+                html += '<div style="margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px;">';
+                html += '<p><strong>Working addresses (copy to register_map.yaml):</strong></p>';
+                html += '<code style="display: block; padding: 10px; background: white; border-radius: 4px; overflow-x: auto;">';
+                const workingAddrs = addresses.filter(addr => results[addr].success);
+                html += workingAddrs.join(', ');
+                html += '</code></div>';
+            }
+            
+            document.getElementById('results').innerHTML = html;
+        }
+
+        function showLoading(message) {
+            let html = '<div class="loading">';
+            html += '<div class="spinner"></div>';
+            html += '<p>' + message + '</p>';
+            html += '</div>';
+            document.getElementById('statusArea').innerHTML = html;
+        }
+
+        function showError(message) {
+            document.getElementById('statusArea').innerHTML = '<div class="error">' + message + '</div>';
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('statusArea').innerHTML = '';
+        }
+    </script>
+</body>
+</html>"""
 
     def _get_ui_html(self) -> str:
         def esc(value: Any) -> str:
@@ -644,7 +984,7 @@ class EMSService:
 <body>
     <div class="container">
         <h1>PIBEMS Dashboard</h1>
-        <div class="refresh-note">Server-rendered view. Auto-refresh every 3 seconds.</div>
+        <div class="refresh-note">Server-rendered view. Auto-refresh every 3 seconds. | <a href="/api/scanner" style="color: white; text-decoration: underline;">Modbus Scanner</a></div>
         <div class="last-update">Last update: {esc(now)}</div>
         <div class="content">
             {''.join(cards)}
@@ -692,6 +1032,15 @@ class EMSService:
                 if path == "/api/diagnostics":
                     self._send_json(200, service.state)
                     return
+                if path == "/api/scanner":
+                    html = service._get_scanner_html()
+                    body = html.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if path in ("/ui", "/"):
                     html = service._get_ui_html()
                     body = html.encode("utf-8")
@@ -705,6 +1054,37 @@ class EMSService:
 
             def do_POST(self) -> None:  # noqa: N802
                 path = self.path.split("?")[0].rstrip("/") or "/"
+                if path == "/api/scan":
+                    try:
+                        length = int(self.headers.get("Content-Length", "0"))
+                        raw = self.rfile.read(length).decode("utf-8")
+                        payload = json.loads(raw) if raw else {}
+                    except Exception as exc:  # noqa: BLE001
+                        self._send_json(400, {"ok": False, "error": f"invalid json: {exc}"})
+                        return
+                    
+                    device = payload.get("device")
+                    start_addr = payload.get("start_addr")
+                    end_addr = payload.get("end_addr")
+                    reg_type = payload.get("reg_type", "input")
+                    
+                    if not device or start_addr is None or end_addr is None:
+                        self._send_json(400, {"ok": False, "error": "Missing device, start_addr, or end_addr"})
+                        return
+                    
+                    try:
+                        if service.loop is None:
+                            self._send_json(500, {"ok": False, "error": "Event loop not initialized"})
+                            return
+                        result = asyncio.run_coroutine_threadsafe(
+                            service.scan_registers(device, int(start_addr), int(end_addr), reg_type),
+                            service.loop
+                        ).result(timeout=60)
+                        self._send_json(200, result)
+                    except Exception as exc:  # noqa: BLE001
+                        self._send_json(500, {"ok": False, "error": f"Scan failed: {exc}"})
+                    return
+                
                 if path != "/api/control":
                     self._send_json(404, {"ok": False, "error": "not found"})
                     return
@@ -725,6 +1105,7 @@ class EMSService:
         return APIHandler
 
     async def run(self) -> None:
+        self.loop = asyncio.get_running_loop()
         tasks = [
             asyncio.create_task(self._run_api(), name="api"),
             asyncio.create_task(self._poll_loop(), name="poll"),
@@ -944,6 +1325,55 @@ class EMSService:
             self.state["status"]["pcs_last_error_time"] = _now_iso()
             _LOG.warning("PCS poll error [host=%s port=%s unit=%s]: %s",
                          self.opts.pcs_host, self.opts.pcs_port, self.opts.pcs_unit_id, err_short)
+
+    async def scan_registers(
+        self,
+        device: str,
+        start_addr: int,
+        end_addr: int,
+        reg_type: str = "input",
+    ) -> dict[str, Any]:
+        """Scan a range of Modbus registers and return success/failure status."""
+        if device == "pcs":
+            client = self.pcs_client
+            unit_id = self.opts.pcs_unit_id
+            offset = self.opts.pcs_address_offset
+        elif device == "huawei":
+            client = self.huawei_client
+            unit_id = self.opts.huawei_unit_id
+            offset = self.opts.huawei_address_offset
+        else:
+            return {"error": f"Unknown device: {device}"}
+
+        results = {}
+        input_reg = reg_type.lower() == "input"
+
+        for addr in range(start_addr, end_addr + 1):
+            try:
+                await self._ensure_connected(client)
+                wire_address = addr + offset
+                
+                if input_reg:
+                    rr = await client.read_input_registers(address=wire_address, count=1, slave=unit_id)
+                else:
+                    rr = await client.read_holding_registers(address=wire_address, count=1, slave=unit_id)
+                
+                if rr.isError():
+                    results[str(addr)] = {"success": False, "error": str(rr)}
+                else:
+                    value = int(rr.registers[0])
+                    results[str(addr)] = {"success": True, "value": value}
+            except Exception as exc:  # noqa: BLE001
+                results[str(addr)] = {"success": False, "error": str(exc).split("\n")[0][:100]}
+        
+        return {
+            "device": device,
+            "reg_type": reg_type,
+            "start_addr": start_addr,
+            "end_addr": end_addr,
+            "address_offset": offset,
+            "results": results,
+        }
 
     async def _probe_pcs_heartbeat(self) -> None:
         try:
