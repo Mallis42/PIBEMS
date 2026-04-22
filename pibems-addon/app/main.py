@@ -556,7 +556,7 @@ class EMSService:
 </head>
 <body>
     <div class="container">
-        <a href="/" class="back-link">← Back to Dashboard</a>
+        <a href="./" class="back-link">← Back to Dashboard</a>
         <h1>Modbus Register Scanner</h1>
         
         <div class="card">
@@ -620,8 +620,8 @@ class EMSService:
             clearResults();
             showLoading('Scanning ' + (endAddr - startAddr + 1) + ' registers...');
             
-            // Try both /scan and /api/scan paths for compatibility with HA ingress
-            const scanPath = window.location.pathname.includes('/api/') ? '/api/scan' : '/scan';
+            // Use relative path that works with both local and HA Cloud ingress
+            const scanPath = './scan';
             
             fetch(scanPath, {
                 method: 'POST',
