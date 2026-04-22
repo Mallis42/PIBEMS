@@ -633,7 +633,14 @@ class EMSService:
                     reg_type: regType
                 })
             })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    return res.text().then(text => {
+                        throw new Error('HTTP ' + res.status + ': ' + text);
+                    });
+                }
+                return res.json();
+            })
             .then(data => {
                 if (data.error) {
                     showError(data.error);
@@ -641,7 +648,10 @@ class EMSService:
                     displayResults(data);
                 }
             })
-            .catch(err => showError('Scan failed: ' + err))
+            .catch(err => {
+                console.error('Scan error:', err);
+                showError('Scan failed: ' + err.toString());
+            })
             .finally(() => {
                 scanInProgress = false;
             });
@@ -1079,13 +1089,22 @@ class EMSService:
                         if service.loop is None:
                             self._send_json(500, {"ok": False, "error": "Event loop not initialized"})
                             return
-                        result = asyncio.run_coroutine_threadsafe(
-                            service.scan_registers(device, int(start_addr), int(end_addr), reg_type),
-                            service.loop
-                        ).result(timeout=60)
-                        self._send_json(200, result)
-                    except Exception as exc:  # noqa: BLE001
-                        self._send_json(500, {"ok": False, "error": f"Scan failed: {exc}"})
+                        try:
+                            result = asyncio.run_coroutine_threadsafe(
+                                service.scan_registers(device, int(start_addr), int(end_addr), reg_type),
+                                service.loop
+                            ).result(timeout=60)
+                            self._send_json(200, result)
+                        except TimeoutError:
+                            self._send_json(504, {"ok": False, "error": "Scan timeout (exceeded 60 seconds)"})
+                        except Exception as scan_exc:  # noqa: BLE001
+                            error_msg = str(scan_exc).split("\n")[0][:200]
+                            _LOG.exception("Scan error")
+                            self._send_json(500, {"ok": False, "error": error_msg})
+                    except Exception as outer_exc:  # noqa: BLE001
+                        error_msg = str(outer_exc).split("\n")[0][:200]
+                        _LOG.exception("Outer scan error")
+                        self._send_json(500, {"ok": False, "error": error_msg})
                     return
                 
                 if path != "/api/control":
