@@ -65,6 +65,12 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 0.1
+    heartbeat:
+      type: input
+      address: 2270
+      quantity: 1
+      datatype: u16
+      scale: 1
     grid_voltage_ab:
       type: input
       address: 2207

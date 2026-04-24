@@ -716,7 +716,7 @@ class EMSService:
                 {name: 'pcs_status_word', doc: 2105},
                 {name: 'monitor_alarm_word', doc: 2107},
                 {name: 'total_power_meter', doc: 2218},
-                {name: 'heartbeat', doc: 2219},
+                {name: 'heartbeat', doc: 2270},
                 {name: 'load_active_power', doc: 2326},
                 {name: 'load_reactive_power', doc: 2327},
                 {name: 'load_apparent_power', doc: 2328},
@@ -730,7 +730,7 @@ class EMSService:
 
             const candidateScores = {};
             successAddrs.forEach(addr => {
-                const off = addr - 2219; // assume this could be heartbeat
+                const off = addr - 2270; // assume this could be heartbeat
                 let score = 0;
                 keyPoints.forEach(p => {
                     if (successSet.has(p.doc + off)) {
@@ -807,7 +807,7 @@ class EMSService:
             2216: {name:'load_reactive_power',     signed:true,  scale:0.1,  unit:'kvar'},
             2217: {name:'load_apparent_power',     signed:true,  scale:0.1,  unit:'kVA'},
             2218: {name:'total_power_meter',       signed:true,  scale:0.1,  unit:'kW'},
-            2219: {name:'heartbeat',               signed:false, scale:1,    unit:''},
+            2270: {name:'heartbeat',               signed:false, scale:1,    unit:''},
             2237: {name:'grid_side_voltage_ab',    signed:true,  scale:0.1,  unit:'V'},
             2238: {name:'grid_side_voltage_bc',    signed:true,  scale:0.1,  unit:'V'},
             2239: {name:'grid_side_voltage_ca',    signed:true,  scale:0.1,  unit:'V'},
