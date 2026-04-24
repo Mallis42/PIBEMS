@@ -1287,24 +1287,41 @@ class EMSService:
             load_p = await self._read_i16(self.pcs_client, points["load_active_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
             load_q = await self._read_i16(self.pcs_client, points["load_reactive_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
             load_s = await self._read_i16(self.pcs_client, points["load_apparent_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            soc = await self._read_u16(self.pcs_client, points["soc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            try:
+                soc = await self._read_u16(self.pcs_client, points["soc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            except Exception:  # noqa: BLE001
+                soc = int(self.state["pcs"].get("soc", 50))
 
-            grid_v_ab = await self._read_i16(self.pcs_client, points["grid_voltage_ab"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            grid_v_bc = await self._read_i16(self.pcs_client, points["grid_voltage_bc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            grid_v_ca = await self._read_i16(self.pcs_client, points["grid_voltage_ca"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            grid_v_ab: int | None
+            grid_v_bc: int | None
+            grid_v_ca: int | None
+            try:
+                grid_v_ab = await self._read_i16(self.pcs_client, points["grid_voltage_ab"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+                grid_v_bc = await self._read_i16(self.pcs_client, points["grid_voltage_bc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+                grid_v_ca = await self._read_i16(self.pcs_client, points["grid_voltage_ca"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            except Exception:  # noqa: BLE001
+                grid_v_ab = None
+                grid_v_bc = None
+                grid_v_ca = None
 
-            bms_charge_voltage_limit = await self._read_u16(
-                self.pcs_client,
-                self.map["pcs"]["limits"]["bms_charge_voltage_limit"]["address"],
-                self.opts.pcs_unit_id,
-                self.opts.pcs_address_offset,
-            )
-            bms_charge_current_limit = await self._read_u16(
-                self.pcs_client,
-                self.map["pcs"]["limits"]["bms_charge_current_limit"]["address"],
-                self.opts.pcs_unit_id,
-                self.opts.pcs_address_offset,
-            )
+            bms_charge_voltage_limit: int | None
+            bms_charge_current_limit: int | None
+            try:
+                bms_charge_voltage_limit = await self._read_u16(
+                    self.pcs_client,
+                    self.map["pcs"]["limits"]["bms_charge_voltage_limit"]["address"],
+                    self.opts.pcs_unit_id,
+                    self.opts.pcs_address_offset,
+                )
+                bms_charge_current_limit = await self._read_u16(
+                    self.pcs_client,
+                    self.map["pcs"]["limits"]["bms_charge_current_limit"]["address"],
+                    self.opts.pcs_unit_id,
+                    self.opts.pcs_address_offset,
+                )
+            except Exception:  # noqa: BLE001
+                bms_charge_voltage_limit = None
+                bms_charge_current_limit = None
 
             self.state["pcs"]["alarm_word_1"] = alarm
             self.state["pcs"]["pcs_status_word"] = status
@@ -1314,23 +1331,28 @@ class EMSService:
             self.state["pcs"]["load_reactive_power_kvar"] = load_q / 10.0
             self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
             self.state["pcs"]["soc"] = soc
-            self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
-            self.state["pcs"]["grid_voltage_bc_v"] = grid_v_bc / 10.0
-            self.state["pcs"]["grid_voltage_ca_v"] = grid_v_ca / 10.0
-            self.state["pcs"]["bms_charge_voltage_limit_v"] = bms_charge_voltage_limit
-            self.state["pcs"]["bms_charge_current_limit_a"] = bms_charge_current_limit
+            if grid_v_ab is not None and grid_v_bc is not None and grid_v_ca is not None:
+                self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
+                self.state["pcs"]["grid_voltage_bc_v"] = grid_v_bc / 10.0
+                self.state["pcs"]["grid_voltage_ca_v"] = grid_v_ca / 10.0
+            if bms_charge_voltage_limit is not None and bms_charge_current_limit is not None:
+                self.state["pcs"]["bms_charge_voltage_limit_v"] = bms_charge_voltage_limit
+                self.state["pcs"]["bms_charge_current_limit_a"] = bms_charge_current_limit
 
             # Bit 2 in monitor alarm word is EMS communication failure in protocol docs.
             self.state["pcs"]["ems_comm_failure"] = bool(monitor & (1 << 2))
 
-            avg_grid_v = (
-                abs(self.state["pcs"]["grid_voltage_ab_v"])
-                + abs(self.state["pcs"]["grid_voltage_bc_v"])
-                + abs(self.state["pcs"]["grid_voltage_ca_v"])
-            ) / 3.0
-            grid_available = avg_grid_v >= self.opts.grid_voltage_present_threshold_v
-            self.state["grid"]["is_available"] = grid_available
-            self.state["grid"]["avg_voltage_v"] = avg_grid_v
+            if all(k in self.state["pcs"] for k in ("grid_voltage_ab_v", "grid_voltage_bc_v", "grid_voltage_ca_v")):
+                avg_grid_v = (
+                    abs(self.state["pcs"]["grid_voltage_ab_v"])
+                    + abs(self.state["pcs"]["grid_voltage_bc_v"])
+                    + abs(self.state["pcs"]["grid_voltage_ca_v"])
+                ) / 3.0
+                grid_available = avg_grid_v >= self.opts.grid_voltage_present_threshold_v
+                self.state["grid"]["is_available"] = grid_available
+                self.state["grid"]["avg_voltage_v"] = avg_grid_v
+            else:
+                grid_available = bool(self.state["grid"].get("is_available", True))
 
             if self._last_grid_available is None:
                 self._last_grid_available = grid_available
