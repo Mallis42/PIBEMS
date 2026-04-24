@@ -834,11 +834,27 @@ class EMSService:
             2359: {name:'battery_status',          signed:false, scale:1,    unit:'enum'},
         };
 
-        function resolveKnown(wireAddr, offset) {
-            const docAddr = wireAddr - offset;
-            const reg = KNOWN_REGISTERS[docAddr];
-            if (!reg) return null;
-            return Object.assign({docAddr: docAddr}, reg);
+        function resolveKnown(requestedAddr, wireAddr, offset) {
+            const candidates = [
+                requestedAddr,
+                wireAddr,
+                requestedAddr - offset,
+                wireAddr - offset,
+            ].filter(v => Number.isFinite(v));
+
+            const seen = new Set();
+            for (const docAddr of candidates) {
+                const normalized = Number(docAddr);
+                if (seen.has(normalized)) {
+                    continue;
+                }
+                seen.add(normalized);
+                const reg = KNOWN_REGISTERS[normalized];
+                if (reg) {
+                    return Object.assign({docAddr: normalized}, reg);
+                }
+            }
+            return null;
         }
 
         function displayResults(data) {
@@ -859,16 +875,18 @@ class EMSService:
             html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + offset + '</div>';
 
             html += '<table class="results-table">';
-            html += '<thead><tr><th>Wire Addr</th><th>Doc Addr</th><th>✓</th><th>U16</th><th>S16</th><th>Known Register</th><th>Scaled Value</th></tr></thead>';
+            html += '<thead><tr><th>Requested Addr</th><th>Wire Addr</th><th>Doc Addr</th><th>✓</th><th>U16</th><th>S16</th><th>Known Register</th><th>Scaled Value</th></tr></thead>';
             html += '<tbody>';
 
             addresses.forEach(addr => {
                 const result = results[addr];
                 const statusClass = result.success ? 'success' : 'failed';
-                const docAddr = addr - offset;
+                const requestedAddr = Number(result.requested_address ?? addr);
+                const wireAddr = Number(result.wire_address ?? requestedAddr);
                 const u16 = result.success ? result.u16 : null;
                 const s16 = result.success ? result.s16 : null;
-                const known = resolveKnown(addr, offset);
+                const known = resolveKnown(requestedAddr, wireAddr, offset);
+                const docAddr = known ? known.docAddr : requestedAddr;
 
                 let knownCell = '';
                 let scaledCell = '';
@@ -884,7 +902,8 @@ class EMSService:
 
                 const rowBg = (known && result.success) ? ' style="background:#f0faf2;"' : '';
                 html += '<tr' + rowBg + '>';
-                html += '<td><strong>' + addr + '</strong></td>';
+                html += '<td><strong>' + requestedAddr + '</strong></td>';
+                html += '<td style="color:#666;">' + wireAddr + '</td>';
                 html += '<td style="color:#666;">' + docAddr + '</td>';
                 html += '<td class="' + statusClass + '">' + (result.success ? '✓' : '✗') + '</td>';
                 html += '<td>' + (u16 !== null ? u16 : '-') + '</td>';
@@ -1765,17 +1784,29 @@ class EMSService:
                     rr = await client.read_holding_registers(address=wire_address, count=1, slave=unit_id)
                 
                 if rr.isError():
-                    results[str(addr)] = {"success": False, "error": str(rr)}
+                    results[str(addr)] = {
+                        "success": False,
+                        "error": str(rr),
+                        "requested_address": addr,
+                        "wire_address": wire_address,
+                    }
                 else:
                     u16 = int(rr.registers[0]) & 0xFFFF
                     s16 = self._decode_i16(u16)
                     results[str(addr)] = {
                         "success": True,
+                        "requested_address": addr,
+                        "wire_address": wire_address,
                         "u16": u16,
                         "s16": s16,
                     }
             except Exception as exc:  # noqa: BLE001
-                results[str(addr)] = {"success": False, "error": str(exc).split("\n")[0][:100]}
+                results[str(addr)] = {
+                    "success": False,
+                    "error": str(exc).split("\n")[0][:100],
+                    "requested_address": addr,
+                    "wire_address": wire_address,
+                }
         
         return {
             "device": device,
