@@ -905,6 +905,19 @@ class EMSService:
                 status.get("pcs_last_error"),
             ),
             card(
+                "PCS Inverter Telemetry",
+                [
+                    stat_row("Voltage AB", esc(fmt(pcs.get("grid_voltage_ab_v"), " V"))),
+                    stat_row("Voltage BC", esc(fmt(pcs.get("grid_voltage_bc_v"), " V"))),
+                    stat_row("Voltage CA", esc(fmt(pcs.get("grid_voltage_ca_v"), " V"))),
+                    stat_row("Current A", esc(fmt(pcs.get("inverter_current_a_a"), " A"))),
+                    stat_row("Current B", esc(fmt(pcs.get("inverter_current_b_a"), " A"))),
+                    stat_row("Current C", esc(fmt(pcs.get("inverter_current_c_a"), " A"))),
+                    stat_row("Frequency", esc(fmt(pcs.get("inverter_frequency_hz"), " Hz"))),
+                    stat_row("Power Factor", esc(fmt(pcs.get("pcs_power_factor")))),
+                ],
+            ),
+            card(
                 "Grid Status",
                 [
                     stat_row("Available", indicator(bool(grid.get("is_available")), "Online" if grid.get("is_available") else "Offline")),
@@ -1390,6 +1403,24 @@ class EMSService:
                 grid_v_bc = None
                 grid_v_ca = None
 
+            inv_i_a: int | None
+            inv_i_b: int | None
+            inv_i_c: int | None
+            inv_freq: int | None
+            inv_pf: int | None
+            try:
+                inv_i_a = await self._read_i16(self.pcs_client, points["inverter_current_a"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+                inv_i_b = await self._read_i16(self.pcs_client, points["inverter_current_b"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+                inv_i_c = await self._read_i16(self.pcs_client, points["inverter_current_c"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+                inv_freq = await self._read_u16(self.pcs_client, points["inverter_frequency"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+                inv_pf = await self._read_i16(self.pcs_client, points["pcs_power_factor"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
+            except Exception:  # noqa: BLE001
+                inv_i_a = None
+                inv_i_b = None
+                inv_i_c = None
+                inv_freq = None
+                inv_pf = None
+
             bms_charge_voltage_limit: int | None
             bms_charge_current_limit: int | None
             try:
@@ -1421,6 +1452,14 @@ class EMSService:
                 self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
                 self.state["pcs"]["grid_voltage_bc_v"] = grid_v_bc / 10.0
                 self.state["pcs"]["grid_voltage_ca_v"] = grid_v_ca / 10.0
+            if inv_i_a is not None and inv_i_b is not None and inv_i_c is not None:
+                self.state["pcs"]["inverter_current_a_a"] = inv_i_a / 10.0
+                self.state["pcs"]["inverter_current_b_a"] = inv_i_b / 10.0
+                self.state["pcs"]["inverter_current_c_a"] = inv_i_c / 10.0
+            if inv_freq is not None:
+                self.state["pcs"]["inverter_frequency_hz"] = inv_freq / 100.0
+            if inv_pf is not None:
+                self.state["pcs"]["pcs_power_factor"] = inv_pf
             if bms_charge_voltage_limit is not None and bms_charge_current_limit is not None:
                 self.state["pcs"]["bms_charge_voltage_limit_v"] = bms_charge_voltage_limit
                 self.state["pcs"]["bms_charge_current_limit_a"] = bms_charge_current_limit

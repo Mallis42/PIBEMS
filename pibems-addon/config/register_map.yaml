@@ -75,22 +75,70 @@ pcs:
       datatype: u16
     load_active_power:
       type: input
-      address: 2326
+      address: 2215
       quantity: 1
       datatype: i16
       scale: 0.1
     load_reactive_power:
       type: input
-      address: 2327
+      address: 2216
       quantity: 1
       datatype: i16
       scale: 0.1
     load_apparent_power:
       type: input
-      address: 2328
+      address: 2217
       quantity: 1
       datatype: i16
       scale: 0.1
+    grid_voltage_ab:
+      type: input
+      address: 2207
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    grid_voltage_bc:
+      type: input
+      address: 2208
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    grid_voltage_ca:
+      type: input
+      address: 2209
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    inverter_current_a:
+      type: input
+      address: 2210
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    inverter_current_b:
+      type: input
+      address: 2211
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    inverter_current_c:
+      type: input
+      address: 2212
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    inverter_frequency:
+      type: input
+      address: 2213
+      quantity: 1
+      datatype: u16
+      scale: 0.01
+    pcs_power_factor:
+      type: input
+      address: 2214
+      quantity: 1
+      datatype: i16
+      scale: 1
   control:
     constant_power_command:
       type: holding
