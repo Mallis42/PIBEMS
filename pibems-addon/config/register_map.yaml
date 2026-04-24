@@ -91,42 +91,6 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 0.1
-    soc:
-      type: input
-      address: 3099
-      quantity: 1
-      datatype: u16
-    grid_voltage_ab:
-      type: input
-      address: 2428
-      quantity: 1
-      datatype: i16
-      scale: 0.1
-    grid_voltage_bc:
-      type: input
-      address: 2429
-      quantity: 1
-      datatype: i16
-      scale: 0.1
-    grid_voltage_ca:
-      type: input
-      address: 2430
-      quantity: 1
-      datatype: i16
-      scale: 0.1
-  limits:
-    bms_charge_voltage_limit:
-      type: holding
-      address: 2884
-      quantity: 1
-      datatype: u16
-      scale: 1
-    bms_charge_current_limit:
-      type: holding
-      address: 2886
-      quantity: 1
-      datatype: u16
-      scale: 1
   control:
     constant_power_command:
       type: holding

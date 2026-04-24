@@ -674,19 +674,23 @@ class EMSService:
             html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + data.address_offset + '</div>';
             
             html += '<table class="results-table">';
-            html += '<thead><tr><th>Address</th><th>Status</th><th>Value</th></tr></thead>';
+            html += '<thead><tr><th>Address</th><th>Status</th><th>U16</th><th>S16</th><th>Note</th></tr></thead>';
             html += '<tbody>';
             
             addresses.forEach(addr => {
                 const result = results[addr];
                 const statusClass = result.success ? 'success' : 'failed';
                 const statusText = result.success ? '✓ Success' : '✗ Failed';
-                const valueText = result.success ? result.value : result.error;
+                const u16Text = result.success ? result.u16 : '-';
+                const s16Text = result.success ? result.s16 : '-';
+                const noteText = result.success ? '' : result.error;
                 
                 html += '<tr>';
                 html += '<td><strong>' + addr + '</strong></td>';
                 html += '<td class="' + statusClass + '">' + statusText + '</td>';
-                html += '<td>' + valueText + '</td>';
+                html += '<td>' + u16Text + '</td>';
+                html += '<td>' + s16Text + '</td>';
+                html += '<td>' + noteText + '</td>';
                 html += '</tr>';
             });
             
@@ -1405,8 +1409,13 @@ class EMSService:
                 if rr.isError():
                     results[str(addr)] = {"success": False, "error": str(rr)}
                 else:
-                    value = int(rr.registers[0])
-                    results[str(addr)] = {"success": True, "value": value}
+                    u16 = int(rr.registers[0]) & 0xFFFF
+                    s16 = self._decode_i16(u16)
+                    results[str(addr)] = {
+                        "success": True,
+                        "u16": u16,
+                        "s16": s16,
+                    }
             except Exception as exc:  # noqa: BLE001
                 results[str(addr)] = {"success": False, "error": str(exc).split("\n")[0][:100]}
         
