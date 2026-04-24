@@ -929,44 +929,44 @@ class EMSService:
     </body>
     </html>"""
 
-        def _get_ui_html(self) -> str:
-            def esc(value: Any) -> str:
-                return html.escape(str(value), quote=True)
+    def _get_ui_html(self) -> str:
+        def esc(value: Any) -> str:
+            return html.escape(str(value), quote=True)
 
-            def fmt(value: Any, suffix: str = "") -> str:
-                if value is None:
-                    return f"-{suffix}"
-                if isinstance(value, float):
-                    return f"{value:.2f}{suffix}"
-                return f"{value}{suffix}"
+        def fmt(value: Any, suffix: str = "") -> str:
+            if value is None:
+                return f"-{suffix}"
+            if isinstance(value, float):
+                return f"{value:.2f}{suffix}"
+            return f"{value}{suffix}"
 
-            def indicator(ok: bool, text: str) -> str:
-                color = "#28a745" if ok else "#dc3545"
-                return (
-                    '<span style="display:inline-flex;align-items:center;gap:8px;">'
-                    f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{color};"></span>'
-                    f'{esc(text)}'
-                    '</span>'
-                )
+        def indicator(ok: bool, text: str) -> str:
+            color = "#28a745" if ok else "#dc3545"
+            return (
+                '<span style="display:inline-flex;align-items:center;gap:8px;">'
+                f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{color};"></span>'
+                f'{esc(text)}'
+                '</span>'
+            )
 
-            def stat_row(label: str, value: str) -> str:
-                return (
-                    '<div class="stat-row">'
-                    f'<span class="stat-label">{esc(label)}:</span>'
-                    f'<span class="stat-value">{value}</span>'
-                    '</div>'
-                )
+        def stat_row(label: str, value: str) -> str:
+            return (
+                '<div class="stat-row">'
+                f'<span class="stat-label">{esc(label)}:</span>'
+                f'<span class="stat-value">{value}</span>'
+                '</div>'
+            )
 
-            def card(title: str, rows: list[str], error: Any = None, full: bool = False) -> str:
-                classes = 'card full-width' if full else 'card'
-                error_html = f'<div class="error-msg">{esc(error)}</div>' if error else ''
-                return (
-                    f'<div class="{classes}">'
-                    f'<h2>{esc(title)}</h2>'
-                    + ''.join(rows)
-                    + error_html
-                    + '</div>'
-                )
+        def card(title: str, rows: list[str], error: Any = None, full: bool = False) -> str:
+            classes = 'card full-width' if full else 'card'
+            error_html = f'<div class="error-msg">{esc(error)}</div>' if error else ''
+            return (
+                f'<div class="{classes}">'
+                f'<h2>{esc(title)}</h2>'
+                + ''.join(rows)
+                + error_html
+                + '</div>'
+            )
 
         def address_lines(entries: list[dict[str, Any]]) -> list[str]:
             lines: list[str] = []
