@@ -182,6 +182,84 @@ pcs:
       datatype: i16
       scale: 0.1
       unit: kVA
+    dod_on_grid:
+      type: input
+      address: 2337
+      quantity: 1
+      datatype: u16
+      scale: 1
+    dod_off_grid:
+      type: input
+      address: 2338
+      quantity: 1
+      datatype: u16
+      scale: 1
+    charge_voltage_upper_limit_v:
+      type: input
+      address: 2339
+      quantity: 1
+      datatype: u16
+      scale: 1
+    discharge_voltage_lower_limit_v:
+      type: input
+      address: 2340
+      quantity: 1
+      datatype: u16
+      scale: 1
+    charge_current_limit_setting_a:
+      type: input
+      address: 2341
+      quantity: 1
+      datatype: u16
+      scale: 1
+    force_charge_start_cell_voltage_mv:
+      type: input
+      address: 2344
+      quantity: 1
+      datatype: u16
+      scale: 1
+    force_charge_stop_cell_voltage_mv:
+      type: input
+      address: 2345
+      quantity: 1
+      datatype: u16
+      scale: 1
+    rtc_hour:
+      type: input
+      address: 2627
+      quantity: 1
+      datatype: u16
+      scale: 1
+    rtc_minute:
+      type: input
+      address: 2628
+      quantity: 1
+      datatype: u16
+      scale: 1
+    rtc_second:
+      type: input
+      address: 2629
+      quantity: 1
+      datatype: u16
+      scale: 1
+    rtc_year:
+      type: input
+      address: 2630
+      quantity: 1
+      datatype: u16
+      scale: 1
+    rtc_month:
+      type: input
+      address: 2631
+      quantity: 1
+      datatype: u16
+      scale: 1
+    rtc_day:
+      type: input
+      address: 2632
+      quantity: 1
+      datatype: u16
+      scale: 1
     battery_voltage:
       type: input
       address: 2347

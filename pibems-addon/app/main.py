@@ -819,6 +819,13 @@ class EMSService:
             2245: {name:'grid_side_active_power',  signed:true,  scale:0.1,  unit:'kW'},
             2246: {name:'grid_side_reactive_power',signed:true,  scale:0.1,  unit:'kvar'},
             2247: {name:'grid_side_apparent_power',signed:true,  scale:0.1,  unit:'kVA'},
+            2337: {name:'dod_on_grid',             signed:false, scale:1,    unit:'%'},
+            2338: {name:'dod_off_grid',            signed:false, scale:1,    unit:'%'},
+            2339: {name:'charge_voltage_upper_limit', signed:false, scale:1, unit:'V'},
+            2340: {name:'discharge_voltage_lower_limit', signed:false, scale:1, unit:'V'},
+            2341: {name:'charge_current_limit_setting', signed:false, scale:1, unit:'A'},
+            2344: {name:'force_charge_start_cell_voltage', signed:false, scale:1, unit:'mV'},
+            2345: {name:'force_charge_stop_cell_voltage', signed:false, scale:1, unit:'mV'},
             2347: {name:'battery_voltage',         signed:false, scale:0.1,  unit:'V'},
             2348: {name:'battery_current',         signed:true,  scale:0.1,  unit:'A'},
             2349: {name:'soc',                     signed:false, scale:1,    unit:'%'},
@@ -832,6 +839,12 @@ class EMSService:
             2357: {name:'allow_charge_power',      signed:false, scale:1,    unit:'kW'},
             2358: {name:'allow_discharge_power',   signed:false, scale:1,    unit:'kW'},
             2359: {name:'battery_status',          signed:false, scale:1,    unit:'enum'},
+            2627: {name:'rtc_hour',                signed:false, scale:1,    unit:'h'},
+            2628: {name:'rtc_minute',              signed:false, scale:1,    unit:'min'},
+            2629: {name:'rtc_second',              signed:false, scale:1,    unit:'s'},
+            2630: {name:'rtc_year',                signed:false, scale:1,    unit:''},
+            2631: {name:'rtc_month',               signed:false, scale:1,    unit:''},
+            2632: {name:'rtc_day',                 signed:false, scale:1,    unit:''},
         };
 
         function resolveKnown(requestedAddr, wireAddr, offset) {
