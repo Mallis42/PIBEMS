@@ -703,9 +703,91 @@ class EMSService:
                 const workingAddrs = addresses.filter(addr => results[addr].success);
                 html += workingAddrs.join(', ');
                 html += '</code></div>';
+
+                html += buildCandidateMapHtml(data, addresses, results);
             }
             
             document.getElementById('results').innerHTML = html;
+        }
+
+        function buildCandidateMapHtml(data, addresses, results) {
+            const keyPoints = [
+                {name: 'alarm_word_1', doc: 2100},
+                {name: 'pcs_status_word', doc: 2105},
+                {name: 'monitor_alarm_word', doc: 2107},
+                {name: 'total_power_meter', doc: 2218},
+                {name: 'heartbeat', doc: 2219},
+                {name: 'load_active_power', doc: 2326},
+                {name: 'load_reactive_power', doc: 2327},
+                {name: 'load_apparent_power', doc: 2328},
+            ];
+
+            const successAddrs = addresses.filter(addr => results[addr] && results[addr].success);
+            if (successAddrs.length === 0) {
+                return '';
+            }
+            const successSet = new Set(successAddrs);
+
+            const candidateScores = {};
+            successAddrs.forEach(addr => {
+                const off = addr - 2219; // assume this could be heartbeat
+                let score = 0;
+                keyPoints.forEach(p => {
+                    if (successSet.has(p.doc + off)) {
+                        score += 1;
+                    }
+                });
+                if (score >= 3) {
+                    candidateScores[off] = Math.max(candidateScores[off] || 0, score);
+                }
+            });
+
+            if (!(data.address_offset in candidateScores)) {
+                let currentScore = 0;
+                keyPoints.forEach(p => {
+                    if (successSet.has(p.doc + data.address_offset)) {
+                        currentScore += 1;
+                    }
+                });
+                candidateScores[data.address_offset] = currentScore;
+            }
+
+            const topOffsets = Object.keys(candidateScores)
+                .map(Number)
+                .sort((a, b) => (candidateScores[b] - candidateScores[a]) || (Math.abs(a - data.address_offset) - Math.abs(b - data.address_offset)))
+                .slice(0, 3);
+
+            let html = '';
+            html += '<div style="margin-top: 15px; padding: 10px; background: #eef5ff; border-radius: 4px;">';
+            html += '<p><strong>Candidate map hints (auto-detected):</strong></p>';
+            html += '<p style="font-size: 12px; color: #555; margin-bottom: 8px;">Shows likely offsets based on key PCS points and decoded U16/S16 values.</p>';
+
+            topOffsets.forEach(off => {
+                html += '<div style="margin-top: 10px; padding: 8px; background: white; border: 1px solid #d9e7ff; border-radius: 4px;">';
+                html += '<div style="font-weight: 600; margin-bottom: 6px;">Offset ' + off + ' (score ' + candidateScores[off] + '/8)' + (off === data.address_offset ? ' • current' : '') + '</div>';
+                html += '<table class="results-table">';
+                html += '<thead><tr><th>Point</th><th>Doc Addr</th><th>Wire Addr</th><th>Status</th><th>U16</th><th>S16</th></tr></thead><tbody>';
+
+                keyPoints.forEach(p => {
+                    const wire = p.doc + off;
+                    const r = results[wire];
+                    const ok = !!(r && r.success);
+                    html += '<tr>';
+                    html += '<td>' + p.name + '</td>';
+                    html += '<td>' + p.doc + '</td>';
+                    html += '<td>' + wire + '</td>';
+                    html += '<td class="' + (ok ? 'success' : 'failed') + '">' + (ok ? '✓' : '✗') + '</td>';
+                    html += '<td>' + (ok ? r.u16 : '-') + '</td>';
+                    html += '<td>' + (ok ? r.s16 : '-') + '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                html += '</div>';
+            });
+
+            html += '</div>';
+            return html;
         }
 
         function showLoading(message) {
