@@ -160,25 +160,28 @@ pcs:
       address: 2244
       quantity: 1
       datatype: i16
-      scale: 1
+      scale: 0.01
     grid_side_active_power:
       type: input
       address: 2245
       quantity: 1
       datatype: i16
-      scale: 1
+      scale: 0.1
+      unit: kW
     grid_side_reactive_power:
       type: input
       address: 2246
       quantity: 1
       datatype: i16
-      scale: 1
+      scale: 0.1
+      unit: kvar
     grid_side_apparent_power:
       type: input
       address: 2247
       quantity: 1
       datatype: i16
-      scale: 1
+      scale: 0.1
+      unit: kVA
     battery_voltage:
       type: input
       address: 2347

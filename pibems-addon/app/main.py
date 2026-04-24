@@ -790,59 +790,183 @@ class EMSService:
             return html;
         }
 
-        function showLoading(message) {
-            let html = '<div class="loading">';
-            html += '<div class="spinner"></div>';
-            html += '<p>' + message + '</p>';
+        // Known PCS register map: doc_address -> {name, signed, scale, unit}
+        const KNOWN_REGISTERS = {
+            2100: {name:'alarm_word_1',           signed:false, scale:1,    unit:''},
+            2105: {name:'pcs_status_word',         signed:false, scale:1,    unit:''},
+            2107: {name:'monitor_alarm_word',      signed:false, scale:1,    unit:''},
+            2207: {name:'grid_voltage_ab',         signed:false, scale:0.1,  unit:'V'},
+            2208: {name:'grid_voltage_bc',         signed:false, scale:0.1,  unit:'V'},
+            2209: {name:'grid_voltage_ca',         signed:false, scale:0.1,  unit:'V'},
+            2210: {name:'inverter_current_a',      signed:true,  scale:0.1,  unit:'A'},
+            2211: {name:'inverter_current_b',      signed:true,  scale:0.1,  unit:'A'},
+            2212: {name:'inverter_current_c',      signed:true,  scale:0.1,  unit:'A'},
+            2213: {name:'inverter_frequency',      signed:false, scale:0.01, unit:'Hz'},
+            2214: {name:'pcs_power_factor',        signed:true,  scale:0.01, unit:''},
+            2215: {name:'load_active_power',       signed:true,  scale:0.1,  unit:'kW'},
+            2216: {name:'load_reactive_power',     signed:true,  scale:0.1,  unit:'kvar'},
+            2217: {name:'load_apparent_power',     signed:true,  scale:0.1,  unit:'kVA'},
+            2218: {name:'total_power_meter',       signed:true,  scale:0.1,  unit:'kW'},
+            2219: {name:'heartbeat',               signed:false, scale:1,    unit:''},
+            2237: {name:'grid_side_voltage_ab',    signed:true,  scale:0.1,  unit:'V'},
+            2238: {name:'grid_side_voltage_bc',    signed:true,  scale:0.1,  unit:'V'},
+            2239: {name:'grid_side_voltage_ca',    signed:true,  scale:0.1,  unit:'V'},
+            2240: {name:'grid_side_current_a',     signed:true,  scale:0.1,  unit:'A'},
+            2241: {name:'grid_side_current_b',     signed:true,  scale:0.1,  unit:'A'},
+            2242: {name:'grid_side_current_c',     signed:true,  scale:0.1,  unit:'A'},
+            2243: {name:'grid_side_frequency',     signed:false, scale:0.01, unit:'Hz'},
+            2244: {name:'grid_side_power_factor',  signed:true,  scale:0.01, unit:''},
+            2245: {name:'grid_side_active_power',  signed:true,  scale:0.1,  unit:'kW'},
+            2246: {name:'grid_side_reactive_power',signed:true,  scale:0.1,  unit:'kvar'},
+            2247: {name:'grid_side_apparent_power',signed:true,  scale:0.1,  unit:'kVA'},
+            2347: {name:'battery_voltage',         signed:false, scale:0.1,  unit:'V'},
+            2348: {name:'battery_current',         signed:true,  scale:0.1,  unit:'A'},
+            2349: {name:'soc',                     signed:false, scale:1,    unit:'%'},
+            2350: {name:'soh',                     signed:false, scale:1,    unit:'%'},
+            2351: {name:'max_cell_voltage',        signed:false, scale:1,    unit:'mV'},
+            2352: {name:'min_cell_voltage',        signed:false, scale:1,    unit:'mV'},
+            2353: {name:'max_cell_temp',           signed:false, scale:0.1,  unit:'°C'},
+            2354: {name:'min_cell_temp',           signed:false, scale:0.1,  unit:'°C'},
+            2355: {name:'charge_current_limit',    signed:false, scale:0.1,  unit:'A'},
+            2356: {name:'discharge_current_limit', signed:false, scale:0.1,  unit:'A'},
+            2357: {name:'allow_charge_power',      signed:false, scale:1,    unit:'kW'},
+            2358: {name:'allow_discharge_power',   signed:false, scale:1,    unit:'kW'},
+            2359: {name:'battery_status',          signed:false, scale:1,    unit:'enum'},
+        };
+
+        function resolveKnown(wireAddr, offset) {
+            const docAddr = wireAddr - offset;
+            const reg = KNOWN_REGISTERS[docAddr];
+            if (!reg) return null;
+            return Object.assign({docAddr: docAddr}, reg);
+        }
+
+        function displayResults(data) {
+            const results = data.results || {};
+            const offset = data.address_offset || 0;
+            const addresses = Object.keys(results).map(Number).sort((a, b) => a - b);
+
+            const successful = addresses.filter(addr => results[addr].success).length;
+            const failed = addresses.length - successful;
+
+            let html = '';
+            html += '<div class="stats">';
+            html += '<div class="stat-box"><div class="stat-label">Total</div><div class="stat-value">' + addresses.length + '</div></div>';
+            html += '<div class="stat-box"><div class="stat-label">✓ Success</div><div class="stat-value" style="color: #28a745;">' + successful + '</div></div>';
+            html += '<div class="stat-box"><div class="stat-label">✗ Failed</div><div class="stat-value" style="color: #dc3545;">' + failed + '</div></div>';
             html += '</div>';
-            document.getElementById('statusArea').innerHTML = html;
+
+            html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + offset + '</div>';
+
+            html += '<table class="results-table">';
+            html += '<thead><tr><th>Wire Addr</th><th>Doc Addr</th><th>✓</th><th>U16</th><th>S16</th><th>Known Register</th><th>Scaled Value</th></tr></thead>';
+            html += '<tbody>';
+
+            addresses.forEach(addr => {
+                const result = results[addr];
+                const statusClass = result.success ? 'success' : 'failed';
+                const docAddr = addr - offset;
+                const u16 = result.success ? result.u16 : null;
+                const s16 = result.success ? result.s16 : null;
+                const known = resolveKnown(addr, offset);
+
+                let knownCell = '';
+                let scaledCell = '';
+                if (result.success && known) {
+                    knownCell = '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.85em;font-weight:600;">' + known.name + '</span>';
+                    const rawVal = known.signed ? s16 : u16;
+                    const scaled = (known.scale === 1) ? rawVal : Math.round(rawVal * known.scale * 1000) / 1000;
+                    const unitStr = known.unit ? ' ' + known.unit : '';
+                    scaledCell = '<strong style="color:#0056b3;">' + scaled + unitStr + '</strong>';
+                } else if (!result.success) {
+                    scaledCell = '<span style="color:#999;font-size:0.82em;">' + (result.error || '') + '</span>';
+                }
+
+                const rowBg = (known && result.success) ? ' style="background:#f0faf2;"' : '';
+                html += '<tr' + rowBg + '>';
+                html += '<td><strong>' + addr + '</strong></td>';
+                html += '<td style="color:#666;">' + docAddr + '</td>';
+                html += '<td class="' + statusClass + '">' + (result.success ? '✓' : '✗') + '</td>';
+                html += '<td>' + (u16 !== null ? u16 : '-') + '</td>';
+                html += '<td>' + (s16 !== null ? s16 : '-') + '</td>';
+                html += '<td>' + knownCell + '</td>';
+                html += '<td>' + scaledCell + '</td>';
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+
+            if (successful > 0) {
+                html += '<div style="margin-top:15px;padding:10px;background:#f0f0f0;border-radius:4px;">';
+                html += '<p><strong>Working wire addresses:</strong></p>';
+                html += '<code style="display:block;padding:10px;background:white;border-radius:4px;overflow-x:auto;">';
+                html += addresses.filter(addr => results[addr].success).join(', ');
+                html += '</code></div>';
+
+                html += buildCandidateMapHtml(data, addresses, results);
+            }
+
+            document.getElementById('results').innerHTML = html;
         }
 
-        function showError(message) {
-            document.getElementById('statusArea').innerHTML = '<div class="error">' + message + '</div>';
-        }
+            function showLoading(message) {
+                let html = '<div class="loading">';
+                html += '<div class="spinner"></div>';
+                html += '<p>' + message + '</p>';
+                html += '</div>';
+                document.getElementById('statusArea').innerHTML = html;
+            }
 
-        function clearResults() {
-            document.getElementById('results').innerHTML = '';
-            document.getElementById('statusArea').innerHTML = '';
-        }
-    </script>
-</body>
-</html>"""
+            function showError(message) {
+                document.getElementById('statusArea').innerHTML = '<div class="error">' + message + '</div>';
+            }
 
-    def _get_ui_html(self) -> str:
-        def esc(value: Any) -> str:
-            return html.escape(str(value), quote=True)
+            function clearResults() {
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('statusArea').innerHTML = '';
+            }
+        </script>
+    </body>
+    </html>"""
 
-        def fmt(value: Any, suffix: str = "") -> str:
-            if value is None:
-                return f"-{suffix}"
-            if isinstance(value, float):
-                return f"{value:.2f}{suffix}"
-            return f"{value}{suffix}"
+        def _get_ui_html(self) -> str:
+            def esc(value: Any) -> str:
+                return html.escape(str(value), quote=True)
 
-        def indicator(connected: bool, text: str) -> str:
-            cls = "connected" if connected else "disconnected"
-            return f'<span><span class="status-indicator {cls}"></span>{esc(text)}</span>'
+            def fmt(value: Any, suffix: str = "") -> str:
+                if value is None:
+                    return f"-{suffix}"
+                if isinstance(value, float):
+                    return f"{value:.2f}{suffix}"
+                return f"{value}{suffix}"
 
-        def stat_row(label: str, value: str) -> str:
-            return (
-                '<div class="stat-row">'
-                f'<span class="stat-label">{esc(label)}:</span>'
-                f'<span class="stat-value">{value}</span>'
-                '</div>'
-            )
+            def indicator(ok: bool, text: str) -> str:
+                color = "#28a745" if ok else "#dc3545"
+                return (
+                    '<span style="display:inline-flex;align-items:center;gap:8px;">'
+                    f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{color};"></span>'
+                    f'{esc(text)}'
+                    '</span>'
+                )
 
-        def card(title: str, rows: list[str], error_text: str | None = None, full: bool = False) -> str:
-            full_class = " full" if full else ""
-            error_html = f'<div class="error-msg">{esc(error_text)}</div>' if error_text else ""
-            return (
-                f'<div class="card{full_class}">'
-                f'<h2>{esc(title)}</h2>'
-                + "".join(rows)
-                + error_html
-                + '</div>'
-            )
+            def stat_row(label: str, value: str) -> str:
+                return (
+                    '<div class="stat-row">'
+                    f'<span class="stat-label">{esc(label)}:</span>'
+                    f'<span class="stat-value">{value}</span>'
+                    '</div>'
+                )
+
+            def card(title: str, rows: list[str], error: Any = None, full: bool = False) -> str:
+                classes = 'card full-width' if full else 'card'
+                error_html = f'<div class="error-msg">{esc(error)}</div>' if error else ''
+                return (
+                    f'<div class="{classes}">'
+                    f'<h2>{esc(title)}</h2>'
+                    + ''.join(rows)
+                    + error_html
+                    + '</div>'
+                )
 
         def address_lines(entries: list[dict[str, Any]]) -> list[str]:
             lines: list[str] = []
@@ -920,7 +1044,13 @@ class EMSService:
                     stat_row("Discharge Current Limit", esc(fmt(pcs.get("discharge_current_limit_a"), " A"))),
                     stat_row("Allow Charge Power", esc(fmt(pcs.get("allow_charge_power_kw"), " kW"))),
                     stat_row("Allow Discharge Power", esc(fmt(pcs.get("allow_discharge_power_kw"), " kW"))),
-                    stat_row("Battery Status", esc(fmt(pcs.get("battery_status")))),
+                    stat_row("Battery Status", (lambda v: (
+                        '<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-weight:600;font-size:0.92em;'
+                        + {0:'background:#d4edda;color:#155724', 1:'background:#fff3cd;color:#856404', 2:'background:#fff3cd;color:#856404', 3:'background:#f8d7da;color:#721c24', 4:'background:#f5c6cb;color:#491217'}.get(int(v), 'background:#e2e3e5;color:#383d41')
+                        + '">'
+                        + {0:'✅ Normal', 1:'⚠️ Charge Disable', 2:'⚠️ Discharge Disable', 3:'🔴 Alarm', 4:'❌ Failure'}.get(int(v), f'Unknown ({v})')
+                        + '</span>'
+                    ) if v is not None else '—')(pcs.get("battery_status"))),
                 ],
             ),
             card(
@@ -939,17 +1069,20 @@ class EMSService:
             card(
                 "PCS Grid-Side Telemetry",
                 [
-                    stat_row("Voltage AB", esc(fmt(pcs.get("grid_side_voltage_ab_v"), " V"))),
-                    stat_row("Voltage BC", esc(fmt(pcs.get("grid_side_voltage_bc_v"), " V"))),
-                    stat_row("Voltage CA", esc(fmt(pcs.get("grid_side_voltage_ca_v"), " V"))),
-                    stat_row("Current A", esc(fmt(pcs.get("grid_side_current_a_a"), " A"))),
-                    stat_row("Current B", esc(fmt(pcs.get("grid_side_current_b_a"), " A"))),
-                    stat_row("Current C", esc(fmt(pcs.get("grid_side_current_c_a"), " A"))),
+                    '<div style="font-size:0.75em;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:0.05em;padding:4px 0 2px">Voltage</div>',
+                    stat_row("V AB", esc(fmt(pcs.get("grid_side_voltage_ab_v"), " V"))),
+                    stat_row("V BC", esc(fmt(pcs.get("grid_side_voltage_bc_v"), " V"))),
+                    stat_row("V CA", esc(fmt(pcs.get("grid_side_voltage_ca_v"), " V"))),
+                    '<div style="font-size:0.75em;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:0.05em;padding:6px 0 2px">Current</div>',
+                    stat_row("I A", esc(fmt(pcs.get("grid_side_current_a_a"), " A"))),
+                    stat_row("I B", esc(fmt(pcs.get("grid_side_current_b_a"), " A"))),
+                    stat_row("I C", esc(fmt(pcs.get("grid_side_current_c_a"), " A"))),
+                    '<div style="font-size:0.75em;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:0.05em;padding:6px 0 2px">Power</div>',
                     stat_row("Frequency", esc(fmt(pcs.get("grid_side_frequency_hz"), " Hz"))),
                     stat_row("Power Factor", esc(fmt(pcs.get("grid_side_power_factor")))),
-                    stat_row("Active Power", esc(fmt(pcs.get("grid_side_active_power")))),
-                    stat_row("Reactive Power", esc(fmt(pcs.get("grid_side_reactive_power")))),
-                    stat_row("Apparent Power", esc(fmt(pcs.get("grid_side_apparent_power")))),
+                    stat_row("Active Power", esc(fmt(pcs.get("grid_side_active_power_kw"), " kW"))),
+                    stat_row("Reactive Power", esc(fmt(pcs.get("grid_side_reactive_power_kvar"), " kvar"))),
+                    stat_row("Apparent Power", esc(fmt(pcs.get("grid_side_apparent_power_kva"), " kVA"))),
                 ],
             ),
             card(
@@ -1575,13 +1708,13 @@ class EMSService:
             if gsf is not None:
                 self.state["pcs"]["grid_side_frequency_hz"] = gsf / 100.0
             if gspf is not None:
-                self.state["pcs"]["grid_side_power_factor"] = gspf
+                self.state["pcs"]["grid_side_power_factor"] = round(gspf / 100.0, 2)
             if gsp is not None:
-                self.state["pcs"]["grid_side_active_power"] = gsp
+                self.state["pcs"]["grid_side_active_power_kw"] = round(gsp / 10.0, 1)
             if gsq is not None:
-                self.state["pcs"]["grid_side_reactive_power"] = gsq
+                self.state["pcs"]["grid_side_reactive_power_kvar"] = round(gsq / 10.0, 1)
             if gss is not None:
-                self.state["pcs"]["grid_side_apparent_power"] = gss
+                self.state["pcs"]["grid_side_apparent_power_kva"] = round(gss / 10.0, 1)
 
             if self._last_grid_available is None:
                 self._last_grid_available = grid_available
