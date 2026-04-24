@@ -68,11 +68,6 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 0.1
-    heartbeat:
-      type: input
-      address: 2219
-      quantity: 1
-      datatype: u16
     load_active_power:
       type: input
       address: 2215

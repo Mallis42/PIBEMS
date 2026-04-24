@@ -1550,8 +1550,14 @@ class EMSService:
         }
 
     async def _probe_pcs_heartbeat(self) -> None:
+        status_points = self.map.get("pcs", {}).get("status", {})
+        heartbeat_point = status_points.get("heartbeat") if isinstance(status_points, dict) else None
+        if not isinstance(heartbeat_point, dict) or "address" not in heartbeat_point:
+            self.state["pcs_direct_probe"]["last_error"] = "heartbeat probe disabled (not configured)"
+            self.state["pcs_direct_probe"]["last_heartbeat"] = None
+            return
         try:
-            heartbeat_addr = int(self.map["pcs"]["status"]["heartbeat"]["address"])
+            heartbeat_addr = int(heartbeat_point["address"])
             heartbeat = await self._read_u16(
                 self.pcs_client,
                 heartbeat_addr,

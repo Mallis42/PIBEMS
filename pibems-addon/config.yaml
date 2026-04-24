@@ -1,5 +1,5 @@
 name: PIBEMS
-version: 0.1.7.4
+version: 0.1.7.5
 slug: pibems
 description: Open-source EMS for Huawei + Megarevo PCS
 url: https://github.com/Mallis42/PIBEMS
@@ -36,8 +36,8 @@ options:
   api_bind_host: 0.0.0.0
   api_bind_port: 8080
   enable_huawei: true
-  enable_pcs_direct: false
-  enable_ems_server: true
+  enable_pcs_direct: true
+  enable_ems_server: false
   poll_interval_sec: 1.0
   control_interval_sec: 1.0
   heartbeat_interval_sec: 1.0
