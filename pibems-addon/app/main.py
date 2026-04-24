@@ -908,19 +908,19 @@ class EMSService:
             card(
                 "PCS Battery Block 3097-3109",
                 [
-                    stat_row("Reg 3097", esc(fmt(pcs.get("battery_3097")))),
-                    stat_row("Reg 3098", esc(fmt(pcs.get("battery_3098")))),
-                    stat_row("Reg 3099 (SOC)", esc(fmt(pcs.get("soc"), " %"))),
-                    stat_row("Reg 3100 (SOH)", esc(fmt(pcs.get("soh"), " %"))),
-                    stat_row("Reg 3101", esc(fmt(pcs.get("battery_3101")))),
-                    stat_row("Reg 3102", esc(fmt(pcs.get("battery_3102")))),
-                    stat_row("Reg 3103", esc(fmt(pcs.get("battery_3103")))),
-                    stat_row("Reg 3104", esc(fmt(pcs.get("battery_3104")))),
-                    stat_row("Reg 3105", esc(fmt(pcs.get("battery_3105")))),
-                    stat_row("Reg 3106", esc(fmt(pcs.get("battery_3106")))),
-                    stat_row("Reg 3107", esc(fmt(pcs.get("battery_3107")))),
-                    stat_row("Reg 3108", esc(fmt(pcs.get("battery_3108")))),
-                    stat_row("Reg 3109", esc(fmt(pcs.get("battery_3109")))),
+                    stat_row("Battery Voltage", esc(fmt(pcs.get("battery_voltage_v"), " V"))),
+                    stat_row("Battery Current", esc(fmt(pcs.get("battery_current_a"), " A"))),
+                    stat_row("SOC", esc(fmt(pcs.get("soc"), " %"))),
+                    stat_row("SOH", esc(fmt(pcs.get("soh"), " %"))),
+                    stat_row("Maximum Cell Voltage", esc(fmt(pcs.get("max_cell_voltage_mv"), " mV"))),
+                    stat_row("Minimum Cell Voltage", esc(fmt(pcs.get("min_cell_voltage_mv"), " mV"))),
+                    stat_row("Maximum Cell Temperature", esc(fmt(pcs.get("max_cell_temp_c"), " °C"))),
+                    stat_row("Minimum Cell Temperature", esc(fmt(pcs.get("min_cell_temp_c"), " °C"))),
+                    stat_row("Charge Current Limit", esc(fmt(pcs.get("charge_current_limit_a"), " A"))),
+                    stat_row("Discharge Current Limit", esc(fmt(pcs.get("discharge_current_limit_a"), " A"))),
+                    stat_row("Allow Charge Power", esc(fmt(pcs.get("allow_charge_power_kw"), " kW"))),
+                    stat_row("Allow Discharge Power", esc(fmt(pcs.get("allow_discharge_power_kw"), " kW"))),
+                    stat_row("Battery Status", esc(fmt(pcs.get("battery_status")))),
                 ],
             ),
             card(
@@ -1457,17 +1457,17 @@ class EMSService:
             soc = await read_point("soc")
             soh = await read_point("soh")
 
-            b3097 = await read_point("battery_3097")
-            b3098 = await read_point("battery_3098")
-            b3101 = await read_point("battery_3101")
-            b3102 = await read_point("battery_3102")
-            b3103 = await read_point("battery_3103")
-            b3104 = await read_point("battery_3104")
-            b3105 = await read_point("battery_3105")
-            b3106 = await read_point("battery_3106")
-            b3107 = await read_point("battery_3107")
-            b3108 = await read_point("battery_3108")
-            b3109 = await read_point("battery_3109")
+            battery_voltage = await read_point("battery_voltage")
+            battery_current = await read_point("battery_current", signed=True)
+            max_cell_voltage_mv = await read_point("max_cell_voltage_mv")
+            min_cell_voltage_mv = await read_point("min_cell_voltage_mv")
+            max_cell_temp_c = await read_point("max_cell_temp_c")
+            min_cell_temp_c = await read_point("min_cell_temp_c")
+            charge_current_limit_a = await read_point("charge_current_limit_a")
+            discharge_current_limit_a = await read_point("discharge_current_limit_a")
+            allow_charge_power_kw = await read_point("allow_charge_power_kw")
+            allow_discharge_power_kw = await read_point("allow_discharge_power_kw")
+            battery_status = await read_point("battery_status")
 
             grid_v_ab = await read_point("grid_voltage_ab", signed=True)
             grid_v_bc = await read_point("grid_voltage_bc", signed=True)
@@ -1512,28 +1512,28 @@ class EMSService:
             if soh is not None:
                 self.state["pcs"]["soh"] = soh
 
-            if b3097 is not None:
-                self.state["pcs"]["battery_3097"] = b3097
-            if b3098 is not None:
-                self.state["pcs"]["battery_3098"] = b3098
-            if b3101 is not None:
-                self.state["pcs"]["battery_3101"] = b3101
-            if b3102 is not None:
-                self.state["pcs"]["battery_3102"] = b3102
-            if b3103 is not None:
-                self.state["pcs"]["battery_3103"] = b3103
-            if b3104 is not None:
-                self.state["pcs"]["battery_3104"] = b3104
-            if b3105 is not None:
-                self.state["pcs"]["battery_3105"] = b3105
-            if b3106 is not None:
-                self.state["pcs"]["battery_3106"] = b3106
-            if b3107 is not None:
-                self.state["pcs"]["battery_3107"] = b3107
-            if b3108 is not None:
-                self.state["pcs"]["battery_3108"] = b3108
-            if b3109 is not None:
-                self.state["pcs"]["battery_3109"] = b3109
+            if battery_voltage is not None:
+                self.state["pcs"]["battery_voltage_v"] = battery_voltage / 10.0
+            if battery_current is not None:
+                self.state["pcs"]["battery_current_a"] = battery_current / 10.0
+            if max_cell_voltage_mv is not None:
+                self.state["pcs"]["max_cell_voltage_mv"] = max_cell_voltage_mv
+            if min_cell_voltage_mv is not None:
+                self.state["pcs"]["min_cell_voltage_mv"] = min_cell_voltage_mv
+            if max_cell_temp_c is not None:
+                self.state["pcs"]["max_cell_temp_c"] = max_cell_temp_c / 10.0
+            if min_cell_temp_c is not None:
+                self.state["pcs"]["min_cell_temp_c"] = min_cell_temp_c / 10.0
+            if charge_current_limit_a is not None:
+                self.state["pcs"]["charge_current_limit_a"] = charge_current_limit_a / 10.0
+            if discharge_current_limit_a is not None:
+                self.state["pcs"]["discharge_current_limit_a"] = discharge_current_limit_a / 10.0
+            if allow_charge_power_kw is not None:
+                self.state["pcs"]["allow_charge_power_kw"] = allow_charge_power_kw
+            if allow_discharge_power_kw is not None:
+                self.state["pcs"]["allow_discharge_power_kw"] = allow_discharge_power_kw
+            if battery_status is not None:
+                self.state["pcs"]["battery_status"] = battery_status
 
             if grid_v_ab is not None and grid_v_bc is not None and grid_v_ca is not None:
                 self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0

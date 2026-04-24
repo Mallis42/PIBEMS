@@ -179,16 +179,18 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 1
-    battery_3097:
+    battery_voltage:
       type: input
       address: 2347
       quantity: 1
       datatype: u16
-    battery_3098:
+      scale: 0.1
+    battery_current:
       type: input
       address: 2348
       quantity: 1
-      datatype: u16
+      datatype: i16
+      scale: 0.1
     soc:
       type: input
       address: 2349
@@ -201,51 +203,60 @@ pcs:
       quantity: 1
       datatype: u16
       scale: 1
-    battery_3101:
+    max_cell_voltage_mv:
       type: input
       address: 2351
       quantity: 1
       datatype: u16
-    battery_3102:
+      scale: 1
+    min_cell_voltage_mv:
       type: input
       address: 2352
       quantity: 1
       datatype: u16
-    battery_3103:
+      scale: 1
+    max_cell_temp_c:
       type: input
       address: 2353
       quantity: 1
       datatype: u16
-    battery_3104:
+      scale: 0.1
+    min_cell_temp_c:
       type: input
       address: 2354
       quantity: 1
       datatype: u16
-    battery_3105:
+      scale: 0.1
+    charge_current_limit_a:
       type: input
       address: 2355
       quantity: 1
       datatype: u16
-    battery_3106:
+      scale: 0.1
+    discharge_current_limit_a:
       type: input
       address: 2356
       quantity: 1
       datatype: u16
-    battery_3107:
+      scale: 0.1
+    allow_charge_power_kw:
       type: input
       address: 2357
       quantity: 1
       datatype: u16
-    battery_3108:
+      scale: 1
+    allow_discharge_power_kw:
       type: input
       address: 2358
       quantity: 1
       datatype: u16
-    battery_3109:
+      scale: 1
+    battery_status:
       type: input
       address: 2359
       quantity: 1
       datatype: u16
+      scale: 1
   control:
     constant_power_command:
       type: holding
