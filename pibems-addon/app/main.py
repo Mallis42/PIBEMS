@@ -1516,7 +1516,7 @@ class EMSService:
                     await self._poll_huawei()
                 if self.opts.enable_pcs_direct and self.server_ctx is None:
                     await self._poll_pcs()
-                elif self.opts.enable_pcs_direct and self.server_ctx is not None:
+                if self.opts.enable_pcs_direct:
                     await self._probe_pcs_heartbeat()
                 self.state["errors"] = self.state["errors"][-20:]
             except Exception as exc:  # noqa: BLE001
