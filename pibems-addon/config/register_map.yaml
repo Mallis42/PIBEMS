@@ -47,27 +47,6 @@ huawei:
 
 pcs:
   status:
-    alarm_word_1:
-      type: input
-      address: 2100
-      quantity: 1
-      datatype: u16
-    pcs_status_word:
-      type: input
-      address: 2105
-      quantity: 1
-      datatype: u16
-    monitor_alarm_word:
-      type: input
-      address: 2107
-      quantity: 1
-      datatype: u16
-    total_power_meter:
-      type: input
-      address: 2218
-      quantity: 1
-      datatype: i16
-      scale: 0.1
     load_active_power:
       type: input
       address: 2215

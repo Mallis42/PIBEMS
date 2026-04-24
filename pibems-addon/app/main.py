@@ -1378,96 +1378,83 @@ class EMSService:
 
     async def _poll_pcs(self) -> None:
         try:
-            points = self.map["pcs"]["status"]
-            alarm = await self._read_u16(self.pcs_client, points["alarm_word_1"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            status = await self._read_u16(self.pcs_client, points["pcs_status_word"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            monitor = await self._read_u16(self.pcs_client, points["monitor_alarm_word"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            total_power = await self._read_i16(self.pcs_client, points["total_power_meter"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            load_p = await self._read_i16(self.pcs_client, points["load_active_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            load_q = await self._read_i16(self.pcs_client, points["load_reactive_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            load_s = await self._read_i16(self.pcs_client, points["load_apparent_power"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            try:
-                soc = await self._read_u16(self.pcs_client, points["soc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            except Exception:  # noqa: BLE001
-                soc = int(self.state["pcs"].get("soc", 50))
+            points = self.map.get("pcs", {}).get("status", {})
+            if not isinstance(points, dict):
+                raise RuntimeError("pcs.status map is invalid")
 
-            grid_v_ab: int | None
-            grid_v_bc: int | None
-            grid_v_ca: int | None
-            try:
-                grid_v_ab = await self._read_i16(self.pcs_client, points["grid_voltage_ab"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-                grid_v_bc = await self._read_i16(self.pcs_client, points["grid_voltage_bc"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-                grid_v_ca = await self._read_i16(self.pcs_client, points["grid_voltage_ca"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            except Exception:  # noqa: BLE001
-                grid_v_ab = None
-                grid_v_bc = None
-                grid_v_ca = None
+            had_success = False
 
-            inv_i_a: int | None
-            inv_i_b: int | None
-            inv_i_c: int | None
-            inv_freq: int | None
-            inv_pf: int | None
-            try:
-                inv_i_a = await self._read_i16(self.pcs_client, points["inverter_current_a"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-                inv_i_b = await self._read_i16(self.pcs_client, points["inverter_current_b"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-                inv_i_c = await self._read_i16(self.pcs_client, points["inverter_current_c"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-                inv_freq = await self._read_u16(self.pcs_client, points["inverter_frequency"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-                inv_pf = await self._read_i16(self.pcs_client, points["pcs_power_factor"]["address"], self.opts.pcs_unit_id, self.opts.pcs_address_offset, input_reg=True)
-            except Exception:  # noqa: BLE001
-                inv_i_a = None
-                inv_i_b = None
-                inv_i_c = None
-                inv_freq = None
-                inv_pf = None
+            async def read_point(name: str, signed: bool = False) -> int | None:
+                nonlocal had_success
+                point = points.get(name)
+                if not isinstance(point, dict) or "address" not in point:
+                    return None
+                try:
+                    address = int(point["address"])
+                    if signed:
+                        value = await self._read_i16(
+                            self.pcs_client,
+                            address,
+                            self.opts.pcs_unit_id,
+                            self.opts.pcs_address_offset,
+                            input_reg=True,
+                        )
+                    else:
+                        value = await self._read_u16(
+                            self.pcs_client,
+                            address,
+                            self.opts.pcs_unit_id,
+                            self.opts.pcs_address_offset,
+                            input_reg=True,
+                        )
+                    had_success = True
+                    return value
+                except Exception:
+                    return None
 
-            bms_charge_voltage_limit: int | None
-            bms_charge_current_limit: int | None
-            try:
-                bms_charge_voltage_limit = await self._read_u16(
-                    self.pcs_client,
-                    self.map["pcs"]["limits"]["bms_charge_voltage_limit"]["address"],
-                    self.opts.pcs_unit_id,
-                    self.opts.pcs_address_offset,
-                )
-                bms_charge_current_limit = await self._read_u16(
-                    self.pcs_client,
-                    self.map["pcs"]["limits"]["bms_charge_current_limit"]["address"],
-                    self.opts.pcs_unit_id,
-                    self.opts.pcs_address_offset,
-                )
-            except Exception:  # noqa: BLE001
-                bms_charge_voltage_limit = None
-                bms_charge_current_limit = None
+            alarm = await read_point("alarm_word_1")
+            status = await read_point("pcs_status_word")
+            monitor = await read_point("monitor_alarm_word")
+            total_power = await read_point("total_power_meter", signed=True)
+            load_p = await read_point("load_active_power", signed=True)
+            load_q = await read_point("load_reactive_power", signed=True)
+            load_s = await read_point("load_apparent_power", signed=True)
+            soc = await read_point("soc")
 
-            self.state["pcs"]["alarm_word_1"] = alarm
-            self.state["pcs"]["pcs_status_word"] = status
-            self.state["pcs"]["monitor_alarm_word"] = monitor
-            self.state["pcs"]["total_power_meter_kw"] = total_power / 10.0
-            self.state["pcs"]["load_active_power_kw"] = load_p / 10.0
-            self.state["pcs"]["load_reactive_power_kvar"] = load_q / 10.0
-            self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
-            self.state["pcs"]["soc"] = soc
+            grid_v_ab = await read_point("grid_voltage_ab", signed=True)
+            grid_v_bc = await read_point("grid_voltage_bc", signed=True)
+            grid_v_ca = await read_point("grid_voltage_ca", signed=True)
+
+            inv_i_a = await read_point("inverter_current_a", signed=True)
+            inv_i_b = await read_point("inverter_current_b", signed=True)
+            inv_i_c = await read_point("inverter_current_c", signed=True)
+            inv_freq = await read_point("inverter_frequency")
+            inv_pf = await read_point("pcs_power_factor", signed=True)
+
+            if alarm is not None:
+                self.state["pcs"]["alarm_word_1"] = alarm
+            if status is not None:
+                self.state["pcs"]["pcs_status_word"] = status
+            if monitor is not None:
+                self.state["pcs"]["monitor_alarm_word"] = monitor
+                # Bit 2 in monitor alarm word is EMS communication failure in protocol docs.
+                self.state["pcs"]["ems_comm_failure"] = bool(monitor & (1 << 2))
+            if total_power is not None:
+                self.state["pcs"]["total_power_meter_kw"] = total_power / 10.0
+            if load_p is not None:
+                self.state["pcs"]["load_active_power_kw"] = load_p / 10.0
+            if load_q is not None:
+                self.state["pcs"]["load_reactive_power_kvar"] = load_q / 10.0
+            if load_s is not None:
+                self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
+            if soc is not None:
+                self.state["pcs"]["soc"] = soc
+
             if grid_v_ab is not None and grid_v_bc is not None and grid_v_ca is not None:
                 self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
                 self.state["pcs"]["grid_voltage_bc_v"] = grid_v_bc / 10.0
                 self.state["pcs"]["grid_voltage_ca_v"] = grid_v_ca / 10.0
-            if inv_i_a is not None and inv_i_b is not None and inv_i_c is not None:
-                self.state["pcs"]["inverter_current_a_a"] = inv_i_a / 10.0
-                self.state["pcs"]["inverter_current_b_a"] = inv_i_b / 10.0
-                self.state["pcs"]["inverter_current_c_a"] = inv_i_c / 10.0
-            if inv_freq is not None:
-                self.state["pcs"]["inverter_frequency_hz"] = inv_freq / 100.0
-            if inv_pf is not None:
-                self.state["pcs"]["pcs_power_factor"] = inv_pf
-            if bms_charge_voltage_limit is not None and bms_charge_current_limit is not None:
-                self.state["pcs"]["bms_charge_voltage_limit_v"] = bms_charge_voltage_limit
-                self.state["pcs"]["bms_charge_current_limit_a"] = bms_charge_current_limit
 
-            # Bit 2 in monitor alarm word is EMS communication failure in protocol docs.
-            self.state["pcs"]["ems_comm_failure"] = bool(monitor & (1 << 2))
-
-            if all(k in self.state["pcs"] for k in ("grid_voltage_ab_v", "grid_voltage_bc_v", "grid_voltage_ca_v")):
                 avg_grid_v = (
                     abs(self.state["pcs"]["grid_voltage_ab_v"])
                     + abs(self.state["pcs"]["grid_voltage_bc_v"])
@@ -1479,14 +1466,23 @@ class EMSService:
             else:
                 grid_available = bool(self.state["grid"].get("is_available", True))
 
+            if inv_i_a is not None and inv_i_b is not None and inv_i_c is not None:
+                self.state["pcs"]["inverter_current_a_a"] = inv_i_a / 10.0
+                self.state["pcs"]["inverter_current_b_a"] = inv_i_b / 10.0
+                self.state["pcs"]["inverter_current_c_a"] = inv_i_c / 10.0
+            if inv_freq is not None:
+                self.state["pcs"]["inverter_frequency_hz"] = inv_freq / 100.0
+            if inv_pf is not None:
+                self.state["pcs"]["pcs_power_factor"] = inv_pf
+
             if self._last_grid_available is None:
                 self._last_grid_available = grid_available
             elif self._last_grid_available != grid_available:
                 self.state["grid"]["last_transition"] = "return" if grid_available else "fail"
                 self._last_grid_available = grid_available
 
-            self.state["status"]["pcs_connected"] = True
-            self.state["status"]["pcs_last_error"] = None
+            self.state["status"]["pcs_connected"] = had_success
+            self.state["status"]["pcs_last_error"] = None if had_success else "No configured PCS points readable"
         except Exception as exc:  # noqa: BLE001
             self.state["status"]["pcs_connected"] = False
             err_short = str(exc).split("\n")[0][:80]
