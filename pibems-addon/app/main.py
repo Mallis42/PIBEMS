@@ -899,10 +899,29 @@ class EMSService:
                 [
                     stat_row("Connection", indicator(bool(status.get("pcs_connected")), "Connected" if status.get("pcs_connected") else "Disconnected")),
                     stat_row("SOC", esc(fmt(pcs.get("soc"), " %"))),
+                    stat_row("SOH", esc(fmt(pcs.get("soh"), " %"))),
                     stat_row("Active Power", esc(fmt(pcs.get("load_active_power_kw"), " kW"))),
                     stat_row("Grid Power", esc(fmt(pcs.get("total_power_meter_kw"), " kW"))),
                 ],
                 status.get("pcs_last_error"),
+            ),
+            card(
+                "PCS Battery Block 3097-3109",
+                [
+                    stat_row("Reg 3097", esc(fmt(pcs.get("battery_3097")))),
+                    stat_row("Reg 3098", esc(fmt(pcs.get("battery_3098")))),
+                    stat_row("Reg 3099 (SOC)", esc(fmt(pcs.get("soc"), " %"))),
+                    stat_row("Reg 3100 (SOH)", esc(fmt(pcs.get("soh"), " %"))),
+                    stat_row("Reg 3101", esc(fmt(pcs.get("battery_3101")))),
+                    stat_row("Reg 3102", esc(fmt(pcs.get("battery_3102")))),
+                    stat_row("Reg 3103", esc(fmt(pcs.get("battery_3103")))),
+                    stat_row("Reg 3104", esc(fmt(pcs.get("battery_3104")))),
+                    stat_row("Reg 3105", esc(fmt(pcs.get("battery_3105")))),
+                    stat_row("Reg 3106", esc(fmt(pcs.get("battery_3106")))),
+                    stat_row("Reg 3107", esc(fmt(pcs.get("battery_3107")))),
+                    stat_row("Reg 3108", esc(fmt(pcs.get("battery_3108")))),
+                    stat_row("Reg 3109", esc(fmt(pcs.get("battery_3109")))),
+                ],
             ),
             card(
                 "PCS Inverter Telemetry",
@@ -915,6 +934,22 @@ class EMSService:
                     stat_row("Current C", esc(fmt(pcs.get("inverter_current_c_a"), " A"))),
                     stat_row("Frequency", esc(fmt(pcs.get("inverter_frequency_hz"), " Hz"))),
                     stat_row("Power Factor", esc(fmt(pcs.get("pcs_power_factor")))),
+                ],
+            ),
+            card(
+                "PCS Grid-Side Telemetry",
+                [
+                    stat_row("Voltage AB", esc(fmt(pcs.get("grid_side_voltage_ab_v"), " V"))),
+                    stat_row("Voltage BC", esc(fmt(pcs.get("grid_side_voltage_bc_v"), " V"))),
+                    stat_row("Voltage CA", esc(fmt(pcs.get("grid_side_voltage_ca_v"), " V"))),
+                    stat_row("Current A", esc(fmt(pcs.get("grid_side_current_a_a"), " A"))),
+                    stat_row("Current B", esc(fmt(pcs.get("grid_side_current_b_a"), " A"))),
+                    stat_row("Current C", esc(fmt(pcs.get("grid_side_current_c_a"), " A"))),
+                    stat_row("Frequency", esc(fmt(pcs.get("grid_side_frequency_hz"), " Hz"))),
+                    stat_row("Power Factor", esc(fmt(pcs.get("grid_side_power_factor")))),
+                    stat_row("Active Power", esc(fmt(pcs.get("grid_side_active_power")))),
+                    stat_row("Reactive Power", esc(fmt(pcs.get("grid_side_reactive_power")))),
+                    stat_row("Apparent Power", esc(fmt(pcs.get("grid_side_apparent_power")))),
                 ],
             ),
             card(
@@ -1420,6 +1455,19 @@ class EMSService:
             load_q = await read_point("load_reactive_power", signed=True)
             load_s = await read_point("load_apparent_power", signed=True)
             soc = await read_point("soc")
+            soh = await read_point("soh")
+
+            b3097 = await read_point("battery_3097")
+            b3098 = await read_point("battery_3098")
+            b3101 = await read_point("battery_3101")
+            b3102 = await read_point("battery_3102")
+            b3103 = await read_point("battery_3103")
+            b3104 = await read_point("battery_3104")
+            b3105 = await read_point("battery_3105")
+            b3106 = await read_point("battery_3106")
+            b3107 = await read_point("battery_3107")
+            b3108 = await read_point("battery_3108")
+            b3109 = await read_point("battery_3109")
 
             grid_v_ab = await read_point("grid_voltage_ab", signed=True)
             grid_v_bc = await read_point("grid_voltage_bc", signed=True)
@@ -1430,6 +1478,18 @@ class EMSService:
             inv_i_c = await read_point("inverter_current_c", signed=True)
             inv_freq = await read_point("inverter_frequency")
             inv_pf = await read_point("pcs_power_factor", signed=True)
+
+            gsv_ab = await read_point("grid_side_voltage_ab", signed=True)
+            gsv_bc = await read_point("grid_side_voltage_bc", signed=True)
+            gsv_ca = await read_point("grid_side_voltage_ca", signed=True)
+            gsi_a = await read_point("grid_side_current_a", signed=True)
+            gsi_b = await read_point("grid_side_current_b", signed=True)
+            gsi_c = await read_point("grid_side_current_c", signed=True)
+            gsf = await read_point("grid_side_frequency")
+            gspf = await read_point("grid_side_power_factor", signed=True)
+            gsp = await read_point("grid_side_active_power", signed=True)
+            gsq = await read_point("grid_side_reactive_power", signed=True)
+            gss = await read_point("grid_side_apparent_power", signed=True)
 
             if alarm is not None:
                 self.state["pcs"]["alarm_word_1"] = alarm
@@ -1449,6 +1509,31 @@ class EMSService:
                 self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
             if soc is not None:
                 self.state["pcs"]["soc"] = soc
+            if soh is not None:
+                self.state["pcs"]["soh"] = soh
+
+            if b3097 is not None:
+                self.state["pcs"]["battery_3097"] = b3097
+            if b3098 is not None:
+                self.state["pcs"]["battery_3098"] = b3098
+            if b3101 is not None:
+                self.state["pcs"]["battery_3101"] = b3101
+            if b3102 is not None:
+                self.state["pcs"]["battery_3102"] = b3102
+            if b3103 is not None:
+                self.state["pcs"]["battery_3103"] = b3103
+            if b3104 is not None:
+                self.state["pcs"]["battery_3104"] = b3104
+            if b3105 is not None:
+                self.state["pcs"]["battery_3105"] = b3105
+            if b3106 is not None:
+                self.state["pcs"]["battery_3106"] = b3106
+            if b3107 is not None:
+                self.state["pcs"]["battery_3107"] = b3107
+            if b3108 is not None:
+                self.state["pcs"]["battery_3108"] = b3108
+            if b3109 is not None:
+                self.state["pcs"]["battery_3109"] = b3109
 
             if grid_v_ab is not None and grid_v_bc is not None and grid_v_ca is not None:
                 self.state["pcs"]["grid_voltage_ab_v"] = grid_v_ab / 10.0
@@ -1474,6 +1559,29 @@ class EMSService:
                 self.state["pcs"]["inverter_frequency_hz"] = inv_freq / 100.0
             if inv_pf is not None:
                 self.state["pcs"]["pcs_power_factor"] = inv_pf
+
+            if gsv_ab is not None:
+                self.state["pcs"]["grid_side_voltage_ab_v"] = gsv_ab / 10.0
+            if gsv_bc is not None:
+                self.state["pcs"]["grid_side_voltage_bc_v"] = gsv_bc / 10.0
+            if gsv_ca is not None:
+                self.state["pcs"]["grid_side_voltage_ca_v"] = gsv_ca / 10.0
+            if gsi_a is not None:
+                self.state["pcs"]["grid_side_current_a_a"] = gsi_a / 10.0
+            if gsi_b is not None:
+                self.state["pcs"]["grid_side_current_b_a"] = gsi_b / 10.0
+            if gsi_c is not None:
+                self.state["pcs"]["grid_side_current_c_a"] = gsi_c / 10.0
+            if gsf is not None:
+                self.state["pcs"]["grid_side_frequency_hz"] = gsf / 100.0
+            if gspf is not None:
+                self.state["pcs"]["grid_side_power_factor"] = gspf
+            if gsp is not None:
+                self.state["pcs"]["grid_side_active_power"] = gsp
+            if gsq is not None:
+                self.state["pcs"]["grid_side_reactive_power"] = gsq
+            if gss is not None:
+                self.state["pcs"]["grid_side_apparent_power"] = gss
 
             if self._last_grid_available is None:
                 self._last_grid_available = grid_available

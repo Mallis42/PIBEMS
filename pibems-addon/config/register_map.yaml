@@ -113,6 +113,139 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 1
+    grid_side_voltage_ab:
+      type: input
+      address: 2237
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    grid_side_voltage_bc:
+      type: input
+      address: 2238
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    grid_side_voltage_ca:
+      type: input
+      address: 2239
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    grid_side_current_a:
+      type: input
+      address: 2240
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    grid_side_current_b:
+      type: input
+      address: 2241
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    grid_side_current_c:
+      type: input
+      address: 2242
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    grid_side_frequency:
+      type: input
+      address: 2243
+      quantity: 1
+      datatype: u16
+      scale: 0.01
+    grid_side_power_factor:
+      type: input
+      address: 2244
+      quantity: 1
+      datatype: i16
+      scale: 1
+    grid_side_active_power:
+      type: input
+      address: 2245
+      quantity: 1
+      datatype: i16
+      scale: 1
+    grid_side_reactive_power:
+      type: input
+      address: 2246
+      quantity: 1
+      datatype: i16
+      scale: 1
+    grid_side_apparent_power:
+      type: input
+      address: 2247
+      quantity: 1
+      datatype: i16
+      scale: 1
+    battery_3097:
+      type: input
+      address: 2347
+      quantity: 1
+      datatype: u16
+    battery_3098:
+      type: input
+      address: 2348
+      quantity: 1
+      datatype: u16
+    soc:
+      type: input
+      address: 2349
+      quantity: 1
+      datatype: u16
+      scale: 1
+    soh:
+      type: input
+      address: 2350
+      quantity: 1
+      datatype: u16
+      scale: 1
+    battery_3101:
+      type: input
+      address: 2351
+      quantity: 1
+      datatype: u16
+    battery_3102:
+      type: input
+      address: 2352
+      quantity: 1
+      datatype: u16
+    battery_3103:
+      type: input
+      address: 2353
+      quantity: 1
+      datatype: u16
+    battery_3104:
+      type: input
+      address: 2354
+      quantity: 1
+      datatype: u16
+    battery_3105:
+      type: input
+      address: 2355
+      quantity: 1
+      datatype: u16
+    battery_3106:
+      type: input
+      address: 2356
+      quantity: 1
+      datatype: u16
+    battery_3107:
+      type: input
+      address: 2357
+      quantity: 1
+      datatype: u16
+    battery_3108:
+      type: input
+      address: 2358
+      quantity: 1
+      datatype: u16
+    battery_3109:
+      type: input
+      address: 2359
+      quantity: 1
+      datatype: u16
   control:
     constant_power_command:
       type: holding
