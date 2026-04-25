@@ -1,5 +1,5 @@
 name: PIBEMS
-version: 0.1.8.4
+version: 0.1.8.5
 slug: pibems
 description: Open-source EMS for Huawei + Megarevo PCS
 url: https://github.com/Mallis42/PIBEMS
@@ -43,6 +43,8 @@ options:
   heartbeat_interval_sec: 1.0
   target_power_kw: 0.0
   huawei_derate_percent: 100.0
+  huawei_control_mode: derate_percent
+  huawei_target_kw: 0.0
   max_charge_kw: 50.0
   max_discharge_kw: 50.0
   min_soc: 15
@@ -83,6 +85,8 @@ schema:
   heartbeat_interval_sec: float(0.2,10)
   target_power_kw: float(-100000,100000)
   huawei_derate_percent: float(0,100)
+  huawei_control_mode: list(derate_percent|target_kw)
+  huawei_target_kw: float(0,100000)
   max_charge_kw: float(0,100000)
   max_discharge_kw: float(0,100000)
   min_soc: int(0,100)

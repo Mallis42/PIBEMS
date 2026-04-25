@@ -5,11 +5,60 @@ huawei:
       address: 32089
       quantity: 1
       datatype: u16
+    pv1_voltage_v:
+      type: holding
+      address: 32016
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    pv1_current_a:
+      type: holding
+      address: 32017
+      quantity: 1
+      datatype: u16
+      scale: 0.01
+    pv2_voltage_v:
+      type: holding
+      address: 32018
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    pv2_current_a:
+      type: holding
+      address: 32019
+      quantity: 1
+      datatype: u16
+      scale: 0.01
+    pv3_voltage_v:
+      type: holding
+      address: 32020
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    pv3_current_a:
+      type: holding
+      address: 32021
+      quantity: 1
+      datatype: u16
+      scale: 0.01
+    pv4_voltage_v:
+      type: holding
+      address: 32022
+      quantity: 1
+      datatype: u16
+      scale: 0.1
+    pv4_current_a:
+      type: holding
+      address: 32023
+      quantity: 1
+      datatype: u16
+      scale: 0.01
     pv_target_value:
       type: holding
       address: 40120
       quantity: 1
       datatype: u16
+      scale: 1
     active_power:
       type: holding
       address: 32080
@@ -23,6 +72,12 @@ huawei:
       datatype: i32
       scale: 1
   control:
+    active_power_kw_target:
+      type: holding
+      address: 40120
+      quantity: 1
+      datatype: u16
+      scale: 1
     active_power_percentage_derating:
       type: holding
       address: 40125
@@ -65,12 +120,36 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 0.1
-    heartbeat:
+    dc_side_voltage_v:
+      type: input
+      address: 2267
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    dc_side_current_a:
+      type: input
+      address: 2268
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    dc_side_power_kw:
+      type: input
+      address: 2269
+      quantity: 1
+      datatype: i16
+      scale: 0.1
+    igbt_temperature_c:
       type: input
       address: 2270
       quantity: 1
-      datatype: u16
-      scale: 1
+      datatype: i16
+      scale: 0.1
+    ambient_temperature_c:
+      type: input
+      address: 2271
+      quantity: 1
+      datatype: i16
+      scale: 0.1
     grid_voltage_ab:
       type: input
       address: 2207

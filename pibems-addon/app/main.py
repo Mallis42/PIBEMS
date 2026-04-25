@@ -172,6 +172,8 @@ class Options:
 
     target_power_kw: float = 0.0
     huawei_derate_percent: float = 100.0
+    huawei_control_mode: str = "derate_percent"
+    huawei_target_kw: float = 0.0
 
     max_charge_kw: float = 50.0
     max_discharge_kw: float = 50.0
@@ -217,6 +219,8 @@ class EMSService:
             "control": {
                 "target_power_kw": float(opts.target_power_kw),
                 "huawei_derate_percent": float(opts.huawei_derate_percent),
+                "huawei_control_mode": str(opts.huawei_control_mode),
+                "huawei_target_kw": float(opts.huawei_target_kw),
                 "auto_mode_enabled": True,
                 "operation_mode": opts.operation_mode,
                 "last_written_pcs_power_kw": 0.0,
@@ -660,8 +664,9 @@ class EMSService:
         function displayResults(data) {
             const results = data.results || {};
             const addresses = Object.keys(results).map(Number).sort((a, b) => a - b);
+            const successfulAddresses = addresses.filter(addr => results[addr] && results[addr].success);
             
-            const successful = addresses.filter(addr => results[addr].success).length;
+            const successful = successfulAddresses.length;
             const failed = addresses.length - successful;
             
             let html = '';
@@ -672,35 +677,31 @@ class EMSService:
             html += '</div>';
             
             html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + data.address_offset + '</div>';
-            
-            html += '<table class="results-table">';
-            html += '<thead><tr><th>Address</th><th>Status</th><th>U16</th><th>S16</th><th>Note</th></tr></thead>';
-            html += '<tbody>';
-            
-            addresses.forEach(addr => {
-                const result = results[addr];
-                const statusClass = result.success ? 'success' : 'failed';
-                const statusText = result.success ? '✓ Success' : '✗ Failed';
-                const u16Text = result.success ? result.u16 : '-';
-                const s16Text = result.success ? result.s16 : '-';
-                const noteText = result.success ? '' : result.error;
-                
-                html += '<tr>';
-                html += '<td><strong>' + addr + '</strong></td>';
-                html += '<td class="' + statusClass + '">' + statusText + '</td>';
-                html += '<td>' + u16Text + '</td>';
-                html += '<td>' + s16Text + '</td>';
-                html += '<td>' + noteText + '</td>';
-                html += '</tr>';
-            });
-            
-            html += '</tbody></table>';
+
+            if (successful > 0) {
+                html += '<table class="results-table">';
+                html += '<thead><tr><th>Address</th><th>U16</th><th>S16</th></tr></thead>';
+                html += '<tbody>';
+
+                successfulAddresses.forEach(addr => {
+                    const result = results[addr];
+                    html += '<tr>';
+                    html += '<td><strong>' + addr + '</strong></td>';
+                    html += '<td>' + result.u16 + '</td>';
+                    html += '<td>' + result.s16 + '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+            } else {
+                html += '<div class="error">No readable registers found in this range.</div>';
+            }
             
             if (successful > 0) {
                 html += '<div style="margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px;">';
                 html += '<p><strong>Working addresses (copy to register_map.yaml):</strong></p>';
                 html += '<code style="display: block; padding: 10px; background: white; border-radius: 4px; overflow-x: auto;">';
-                const workingAddrs = addresses.filter(addr => results[addr].success);
+                const workingAddrs = successfulAddresses;
                 html += workingAddrs.join(', ');
                 html += '</code></div>';
 
@@ -716,7 +717,7 @@ class EMSService:
                 {name: 'pcs_status_word', doc: 2105},
                 {name: 'monitor_alarm_word', doc: 2107},
                 {name: 'total_power_meter', doc: 2218},
-                {name: 'heartbeat', doc: 2270},
+                {name: 'igbt_temperature_c', doc: 2270},
                 {name: 'load_active_power', doc: 2326},
                 {name: 'load_reactive_power', doc: 2327},
                 {name: 'load_apparent_power', doc: 2328},
@@ -730,7 +731,7 @@ class EMSService:
 
             const candidateScores = {};
             successAddrs.forEach(addr => {
-                const off = addr - 2270; // assume this could be heartbeat
+                const off = addr - 2270; // use the 2270 point as a reference anchor
                 let score = 0;
                 keyPoints.forEach(p => {
                     if (successSet.has(p.doc + off)) {
@@ -807,7 +808,11 @@ class EMSService:
             2216: {name:'load_reactive_power',     signed:true,  scale:0.1,  unit:'kvar'},
             2217: {name:'load_apparent_power',     signed:true,  scale:0.1,  unit:'kVA'},
             2218: {name:'total_power_meter',       signed:true,  scale:0.1,  unit:'kW'},
-            2270: {name:'heartbeat',               signed:false, scale:1,    unit:''},
+            2267: {name:'dc_side_voltage',         signed:true,  scale:0.1,  unit:'V'},
+            2268: {name:'dc_side_current',         signed:true,  scale:0.1,  unit:'A'},
+            2269: {name:'dc_side_power',           signed:true,  scale:0.1,  unit:'kW'},
+            2270: {name:'igbt_temperature',        signed:true,  scale:0.1,  unit:'°C'},
+            2271: {name:'ambient_temperature',     signed:true,  scale:0.1,  unit:'°C'},
             2237: {name:'grid_side_voltage_ab',    signed:true,  scale:0.1,  unit:'V'},
             2238: {name:'grid_side_voltage_bc',    signed:true,  scale:0.1,  unit:'V'},
             2239: {name:'grid_side_voltage_ca',    signed:true,  scale:0.1,  unit:'V'},
@@ -1046,7 +1051,13 @@ class EMSService:
                     stat_row("Status", esc(fmt(huawei.get("device_status_text") or huawei.get("device_status")))),
                     stat_row("Active Power", esc(fmt(huawei.get("active_power_kw"), " kW"))),
                     stat_row("PV Target", esc(fmt(huawei.get("pv_target_value")))),
+                    stat_row("Control Mode", esc(fmt(control.get("huawei_control_mode")))),
+                    stat_row("Target kW", esc(fmt(control.get("huawei_target_kw"), " kW"))),
                     stat_row("Derate %", esc(fmt(control.get("huawei_derate_percent"), "%"))),
+                    stat_row("PV1", esc(f"{fmt(huawei.get('pv1_voltage_v'), ' V')} / {fmt(huawei.get('pv1_current_a'), ' A')}")),
+                    stat_row("PV2", esc(f"{fmt(huawei.get('pv2_voltage_v'), ' V')} / {fmt(huawei.get('pv2_current_a'), ' A')}")),
+                    stat_row("PV3", esc(f"{fmt(huawei.get('pv3_voltage_v'), ' V')} / {fmt(huawei.get('pv3_current_a'), ' A')}")),
+                    stat_row("PV4", esc(f"{fmt(huawei.get('pv4_voltage_v'), ' V')} / {fmt(huawei.get('pv4_current_a'), ' A')}")),
                 ],
                 status.get("huawei_last_error"),
             ),
@@ -1096,6 +1107,11 @@ class EMSService:
                     stat_row("Current C", esc(fmt(pcs.get("inverter_current_c_a"), " A"))),
                     stat_row("Frequency", esc(fmt(pcs.get("inverter_frequency_hz"), " Hz"))),
                     stat_row("Power Factor", esc(fmt(pcs.get("pcs_power_factor")))),
+                    stat_row("DC Side Voltage", esc(fmt(pcs.get("dc_side_voltage_v"), " V"))),
+                    stat_row("DC Side Current", esc(fmt(pcs.get("dc_side_current_a"), " A"))),
+                    stat_row("DC Side Power", esc(fmt(pcs.get("dc_side_power_kw"), " kW"))),
+                    stat_row("IGBT Temp", esc(fmt(pcs.get("igbt_temperature_c"), " °C"))),
+                    stat_row("Ambient Temp", esc(fmt(pcs.get("ambient_temperature_c"), " °C"))),
                 ],
             ),
             card(
@@ -1312,6 +1328,14 @@ class EMSService:
         if "huawei_derate_percent" in payload and payload["huawei_derate_percent"] is not None:
             value = max(0.0, min(100.0, float(payload["huawei_derate_percent"])))
             self.state["control"]["huawei_derate_percent"] = value
+        if "huawei_target_kw" in payload and payload["huawei_target_kw"] is not None:
+            value = max(0.0, min(float(self.opts.huawei_max_power_kw), float(payload["huawei_target_kw"])))
+            self.state["control"]["huawei_target_kw"] = value
+        if "huawei_control_mode" in payload and payload["huawei_control_mode"] is not None:
+            mode = str(payload["huawei_control_mode"]).strip().lower()
+            if mode not in ("derate_percent", "target_kw"):
+                return False, "huawei_control_mode must be 'derate_percent' or 'target_kw'"
+            self.state["control"]["huawei_control_mode"] = mode
         if "auto_mode_enabled" in payload and payload["auto_mode_enabled"] is not None:
             self.state["control"]["auto_mode_enabled"] = bool(payload["auto_mode_enabled"])
         if "operation_mode" in payload and payload["operation_mode"] is not None:
@@ -1562,11 +1586,45 @@ class EMSService:
             meter = await self._read_i32(self.huawei_client, points["meter_active_power"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
             pv_target = await self._read_u16(self.huawei_client, points["pv_target_value"]["address"], self.opts.huawei_unit_id, self.opts.huawei_address_offset)
 
+            async def read_optional_scaled_u16(name: str) -> float | None:
+                point = points.get(name)
+                if not isinstance(point, dict) or "address" not in point:
+                    return None
+                try:
+                    raw = await self._read_u16(
+                        self.huawei_client,
+                        int(point["address"]),
+                        self.opts.huawei_unit_id,
+                        self.opts.huawei_address_offset,
+                    )
+                except Exception:
+                    return None
+                scale = float(point.get("scale", 1.0))
+                return raw * scale
+
+            pv1_v = await read_optional_scaled_u16("pv1_voltage_v")
+            pv1_a = await read_optional_scaled_u16("pv1_current_a")
+            pv2_v = await read_optional_scaled_u16("pv2_voltage_v")
+            pv2_a = await read_optional_scaled_u16("pv2_current_a")
+            pv3_v = await read_optional_scaled_u16("pv3_voltage_v")
+            pv3_a = await read_optional_scaled_u16("pv3_current_a")
+            pv4_v = await read_optional_scaled_u16("pv4_voltage_v")
+            pv4_a = await read_optional_scaled_u16("pv4_current_a")
+            pv_target_scale = float(points["pv_target_value"].get("scale", 1.0))
+
             self.state["huawei"]["device_status"] = status
             self.state["huawei"]["device_status_text"] = f"{self._decode_huawei_status(status)} ({status})"
             self.state["huawei"]["active_power_kw"] = pwr / 1000.0
             self.state["huawei"]["meter_active_power_w"] = meter
-            self.state["huawei"]["pv_target_value"] = pv_target
+            self.state["huawei"]["pv_target_value"] = pv_target * pv_target_scale
+            self.state["huawei"]["pv1_voltage_v"] = pv1_v
+            self.state["huawei"]["pv1_current_a"] = pv1_a
+            self.state["huawei"]["pv2_voltage_v"] = pv2_v
+            self.state["huawei"]["pv2_current_a"] = pv2_a
+            self.state["huawei"]["pv3_voltage_v"] = pv3_v
+            self.state["huawei"]["pv3_current_a"] = pv3_a
+            self.state["huawei"]["pv4_voltage_v"] = pv4_v
+            self.state["huawei"]["pv4_current_a"] = pv4_a
             self.state["status"]["huawei_connected"] = True
             self.state["status"]["huawei_last_error"] = None
         except Exception as exc:  # noqa: BLE001
@@ -1619,6 +1677,11 @@ class EMSService:
             load_p = await read_point("load_active_power", signed=True)
             load_q = await read_point("load_reactive_power", signed=True)
             load_s = await read_point("load_apparent_power", signed=True)
+            dc_v = await read_point("dc_side_voltage_v", signed=True)
+            dc_i = await read_point("dc_side_current_a", signed=True)
+            dc_kw = await read_point("dc_side_power_kw", signed=True)
+            igbt_t = await read_point("igbt_temperature_c", signed=True)
+            amb_t = await read_point("ambient_temperature_c", signed=True)
             soc = await read_point("soc")
             soh = await read_point("soh")
 
@@ -1672,6 +1735,16 @@ class EMSService:
                 self.state["pcs"]["load_reactive_power_kvar"] = load_q / 10.0
             if load_s is not None:
                 self.state["pcs"]["load_apparent_power_kva"] = load_s / 10.0
+            if dc_v is not None:
+                self.state["pcs"]["dc_side_voltage_v"] = dc_v / 10.0
+            if dc_i is not None:
+                self.state["pcs"]["dc_side_current_a"] = dc_i / 10.0
+            if dc_kw is not None:
+                self.state["pcs"]["dc_side_power_kw"] = dc_kw / 10.0
+            if igbt_t is not None:
+                self.state["pcs"]["igbt_temperature_c"] = igbt_t / 10.0
+            if amb_t is not None:
+                self.state["pcs"]["ambient_temperature_c"] = amb_t / 10.0
             if soc is not None:
                 self.state["pcs"]["soc"] = soc
             if soh is not None:
@@ -1872,7 +1945,31 @@ class EMSService:
         if self._is_read_only_mode():
             self.state["control"]["policy_reason"] = "read_only_mode"
             return
-        point = self.map["huawei"]["control"]["active_power_percentage_derating"]
+        control_points = self.map["huawei"]["control"]
+        mode = str(self.state["control"].get("huawei_control_mode", "derate_percent")).strip().lower()
+        if mode == "target_kw":
+            point = control_points.get("active_power_kw_target")
+            if not isinstance(point, dict):
+                point = control_points.get("pv_target_value")
+            if not isinstance(point, dict):
+                point = {"address": 40120, "scale": 1}
+            target_kw = float(self.state["control"].get("huawei_target_kw", 0.0))
+            target_kw = max(0.0, min(float(self.opts.huawei_max_power_kw), target_kw))
+            scale = float(point.get("scale", 1.0))
+            if scale <= 0:
+                scale = 1.0
+            raw = int(round(target_kw / scale))
+            await self._write_u16(
+                self.huawei_client,
+                int(point["address"]),
+                raw,
+                self.opts.huawei_unit_id,
+                self.opts.huawei_address_offset,
+            )
+            self.state["control"]["policy_reason"] = "huawei_target_kw"
+            return
+
+        point = control_points["active_power_percentage_derating"]
         derate = float(self.state["control"]["huawei_derate_percent"])
         if not self.state["grid"].get("is_available", True):
             soc = int(self.state["pcs"].get("soc", 50))
