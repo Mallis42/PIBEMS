@@ -767,19 +767,21 @@ class EMSService:
                 html += '<div style="margin-top: 10px; padding: 8px; background: white; border: 1px solid #d9e7ff; border-radius: 4px;">';
                 html += '<div style="font-weight: 600; margin-bottom: 6px;">Offset ' + off + ' (score ' + candidateScores[off] + '/8)' + (off === data.address_offset ? ' • current' : '') + '</div>';
                 html += '<table class="results-table">';
-                html += '<thead><tr><th>Point</th><th>Doc Addr</th><th>Wire Addr</th><th>Status</th><th>U16</th><th>S16</th></tr></thead><tbody>';
+                html += '<thead><tr><th>Point</th><th>Doc Addr</th><th>Wire Addr</th><th>U16</th><th>S16</th></tr></thead><tbody>';
 
                 keyPoints.forEach(p => {
                     const wire = p.doc + off;
                     const r = results[wire];
                     const ok = !!(r && r.success);
+                    if (!ok) {
+                        return;
+                    }
                     html += '<tr>';
                     html += '<td>' + p.name + '</td>';
                     html += '<td>' + p.doc + '</td>';
                     html += '<td>' + wire + '</td>';
-                    html += '<td class="' + (ok ? 'success' : 'failed') + '">' + (ok ? '✓' : '✗') + '</td>';
-                    html += '<td>' + (ok ? r.u16 : '-') + '</td>';
-                    html += '<td>' + (ok ? r.s16 : '-') + '</td>';
+                    html += '<td>' + r.u16 + '</td>';
+                    html += '<td>' + r.s16 + '</td>';
                     html += '</tr>';
                 });
 
@@ -879,8 +881,9 @@ class EMSService:
             const results = data.results || {};
             const offset = data.address_offset || 0;
             const addresses = Object.keys(results).map(Number).sort((a, b) => a - b);
+            const successfulAddresses = addresses.filter(addr => results[addr] && results[addr].success);
 
-            const successful = addresses.filter(addr => results[addr].success).length;
+            const successful = successfulAddresses.length;
             const failed = addresses.length - successful;
 
             let html = '';
@@ -892,52 +895,52 @@ class EMSService:
 
             html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + offset + '</div>';
 
-            html += '<table class="results-table">';
-            html += '<thead><tr><th>Requested Addr</th><th>Wire Addr</th><th>Doc Addr</th><th>✓</th><th>U16</th><th>S16</th><th>Known Register</th><th>Scaled Value</th></tr></thead>';
-            html += '<tbody>';
+            if (successful > 0) {
+                html += '<table class="results-table">';
+                html += '<thead><tr><th>Requested Addr</th><th>Wire Addr</th><th>Doc Addr</th><th>U16</th><th>S16</th><th>Known Register</th><th>Scaled Value</th></tr></thead>';
+                html += '<tbody>';
 
-            addresses.forEach(addr => {
-                const result = results[addr];
-                const statusClass = result.success ? 'success' : 'failed';
-                const requestedAddr = Number(result.requested_address ?? addr);
-                const wireAddr = Number(result.wire_address ?? requestedAddr);
-                const u16 = result.success ? result.u16 : null;
-                const s16 = result.success ? result.s16 : null;
-                const known = resolveKnown(requestedAddr, wireAddr, offset);
-                const docAddr = known ? known.docAddr : requestedAddr;
+                successfulAddresses.forEach(addr => {
+                    const result = results[addr];
+                    const requestedAddr = Number(result.requested_address ?? addr);
+                    const wireAddr = Number(result.wire_address ?? requestedAddr);
+                    const u16 = result.u16;
+                    const s16 = result.s16;
+                    const known = resolveKnown(requestedAddr, wireAddr, offset);
+                    const docAddr = known ? known.docAddr : requestedAddr;
 
-                let knownCell = '';
-                let scaledCell = '';
-                if (result.success && known) {
-                    knownCell = '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.85em;font-weight:600;">' + known.name + '</span>';
-                    const rawVal = known.signed ? s16 : u16;
-                    const scaled = (known.scale === 1) ? rawVal : Math.round(rawVal * known.scale * 1000) / 1000;
-                    const unitStr = known.unit ? ' ' + known.unit : '';
-                    scaledCell = '<strong style="color:#0056b3;">' + scaled + unitStr + '</strong>';
-                } else if (!result.success) {
-                    scaledCell = '<span style="color:#999;font-size:0.82em;">' + (result.error || '') + '</span>';
-                }
+                    let knownCell = '';
+                    let scaledCell = '';
+                    if (known) {
+                        knownCell = '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.85em;font-weight:600;">' + known.name + '</span>';
+                        const rawVal = known.signed ? s16 : u16;
+                        const scaled = (known.scale === 1) ? rawVal : Math.round(rawVal * known.scale * 1000) / 1000;
+                        const unitStr = known.unit ? ' ' + known.unit : '';
+                        scaledCell = '<strong style="color:#0056b3;">' + scaled + unitStr + '</strong>';
+                    }
 
-                const rowBg = (known && result.success) ? ' style="background:#f0faf2;"' : '';
-                html += '<tr' + rowBg + '>';
-                html += '<td><strong>' + requestedAddr + '</strong></td>';
-                html += '<td style="color:#666;">' + wireAddr + '</td>';
-                html += '<td style="color:#666;">' + docAddr + '</td>';
-                html += '<td class="' + statusClass + '">' + (result.success ? '✓' : '✗') + '</td>';
-                html += '<td>' + (u16 !== null ? u16 : '-') + '</td>';
-                html += '<td>' + (s16 !== null ? s16 : '-') + '</td>';
-                html += '<td>' + knownCell + '</td>';
-                html += '<td>' + scaledCell + '</td>';
-                html += '</tr>';
-            });
+                    const rowBg = known ? ' style="background:#f0faf2;"' : '';
+                    html += '<tr' + rowBg + '>';
+                    html += '<td><strong>' + requestedAddr + '</strong></td>';
+                    html += '<td style="color:#666;">' + wireAddr + '</td>';
+                    html += '<td style="color:#666;">' + docAddr + '</td>';
+                    html += '<td>' + u16 + '</td>';
+                    html += '<td>' + s16 + '</td>';
+                    html += '<td>' + knownCell + '</td>';
+                    html += '<td>' + scaledCell + '</td>';
+                    html += '</tr>';
+                });
 
-            html += '</tbody></table>';
+                html += '</tbody></table>';
+            } else {
+                html += '<div class="error">No readable registers found in this range.</div>';
+            }
 
             if (successful > 0) {
                 html += '<div style="margin-top:15px;padding:10px;background:#f0f0f0;border-radius:4px;">';
                 html += '<p><strong>Working wire addresses:</strong></p>';
                 html += '<code style="display:block;padding:10px;background:white;border-radius:4px;overflow-x:auto;">';
-                html += addresses.filter(addr => results[addr].success).join(', ');
+                html += successfulAddresses.join(', ');
                 html += '</code></div>';
 
                 html += buildCandidateMapHtml(data, addresses, results);
