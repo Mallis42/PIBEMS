@@ -1109,8 +1109,10 @@ class EMSService:
                     stat_row("Trace Time", esc(fmt(huawei_trace.get("time")))),
                     stat_row("Mode", esc(fmt(huawei_trace.get("mode")))),
                     stat_row("Grid Available", esc(fmt(huawei_trace.get("grid_available")))),
+                    stat_row("PV Active Raw", esc(fmt(huawei_trace.get("pv_active_power_kw_raw"), " kW"))),
                     stat_row("Grid Active Raw", esc(fmt(huawei_trace.get("grid_side_active_power_kw_raw"), " kW"))),
                     stat_row("Grid Import Calc", esc(fmt(huawei_trace.get("grid_import_kw"), " kW"))),
+                    stat_row("Grid Net Calc", esc(fmt(huawei_trace.get("grid_net_kw"), " kW"))),
                     stat_row("PCS Load Raw", esc(fmt(huawei_trace.get("pcs_load_kw_raw"), " kW"))),
                     stat_row("Source Selected", esc(fmt(huawei_trace.get("source_name")))),
                     stat_row("Base Load", esc(fmt(huawei_trace.get("base_load_kw"), " kW"))),
@@ -2064,8 +2066,10 @@ class EMSService:
                 "time": _now_iso(),
                 "mode": "target_kw",
                 "grid_available": bool(self.state["grid"].get("is_available", True)),
+                "pv_active_power_kw_raw": None,
                 "grid_side_active_power_kw_raw": None,
                 "grid_import_kw": None,
+                "grid_net_kw": None,
                 "pcs_load_kw_raw": None,
                 "source_name": "manual",
                 "base_load_kw": None,
@@ -2088,32 +2092,34 @@ class EMSService:
             }
             if follow_load:
                 grid_available = bool(self.state["grid"].get("is_available", True))
+                pv_active_kw = float(self.state["huawei"].get("active_power_kw", 0.0) or 0.0)
                 grid_incoming_kw = self.state["pcs"].get("grid_side_active_power_kw")
                 pcs_load_kw = self.state["pcs"].get("load_active_power_kw")
                 trace["grid_available"] = grid_available
+                trace["pv_active_power_kw_raw"] = pv_active_kw
                 trace["grid_side_active_power_kw_raw"] = grid_incoming_kw
                 trace["pcs_load_kw_raw"] = pcs_load_kw
 
                 # Requested behaviour:
-                # - Grid ON: follow incoming grid kW.
-                # - Grid OFF: follow PCS load kW.
+                # - Grid ON: follow total site load (PV active + grid net).
+                # - Grid OFF: follow PCS load kW only.
                 # Sign convention note: grid_side_active_power_kw < 0 means importing from grid.
                 source_name = ""
                 source_kw: float | None = None
-                if grid_available and grid_incoming_kw is not None:
-                    source_name = "grid_incoming"
-                    source_kw = max(0.0, -float(grid_incoming_kw))
-                    trace["grid_import_kw"] = source_kw
-                elif (not grid_available) and pcs_load_kw is not None:
-                    source_name = "pcs_load"
-                    source_kw = abs(float(pcs_load_kw))
-                elif pcs_load_kw is not None:
-                    source_name = "pcs_load_fallback"
-                    source_kw = abs(float(pcs_load_kw))
-                elif grid_incoming_kw is not None:
-                    source_name = "grid_incoming_fallback"
-                    source_kw = max(0.0, -float(grid_incoming_kw))
-                    trace["grid_import_kw"] = source_kw
+                if grid_available:
+                    if grid_incoming_kw is not None:
+                        source_name = "site_load_from_pv_grid_net"
+                        grid_net_kw = -float(grid_incoming_kw)  # import=positive, export=negative
+                        source_kw = max(0.0, pv_active_kw + grid_net_kw)
+                        trace["grid_net_kw"] = grid_net_kw
+                        trace["grid_import_kw"] = max(0.0, grid_net_kw)
+                    elif pcs_load_kw is not None:
+                        source_name = "pcs_load_fallback_grid_on"
+                        source_kw = abs(float(pcs_load_kw))
+                else:
+                    if pcs_load_kw is not None:
+                        source_name = "pcs_load_grid_off"
+                        source_kw = abs(float(pcs_load_kw))
 
                 if source_kw is not None:
                     base_load_kw = source_kw
