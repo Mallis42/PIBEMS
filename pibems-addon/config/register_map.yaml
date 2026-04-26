@@ -58,7 +58,7 @@ huawei:
       address: 40120
       quantity: 1
       datatype: u16
-      scale: 1
+      scale: 0.1
     active_power:
       type: holding
       address: 32080
@@ -77,7 +77,7 @@ huawei:
       address: 40120
       quantity: 1
       datatype: u16
-      scale: 1
+      scale: 0.1
     active_power_percentage_derating:
       type: holding
       address: 40125

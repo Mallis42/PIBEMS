@@ -2055,7 +2055,7 @@ class EMSService:
             if not isinstance(point, dict):
                 point = control_points.get("pv_target_value")
             if not isinstance(point, dict):
-                point = {"address": 40120, "scale": 1}
+                point = {"address": 40120, "scale": 0.1}
 
             follow_load = bool(self.state["control"].get("huawei_follow_pcs_load", False))
             target_kw = float(self.state["control"].get("huawei_target_kw", 0.0))
