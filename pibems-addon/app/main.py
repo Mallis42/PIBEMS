@@ -174,6 +174,17 @@ class Options:
     huawei_derate_percent: float = 100.0
     huawei_control_mode: str = "derate_percent"
     huawei_target_kw: float = 0.0
+    huawei_follow_pcs_load: bool = False
+    pv_charge_enable: bool = False
+    pv_charge_extra_kw: float = 0.0
+    outage_prevent_overcharge_enable: bool = False
+    outage_prevent_draw_kw: float = 2.0
+    outage_prevent_soc_low: int = 95
+    outage_prevent_soc_high: int = 98
+    huawei_target_ramp_enable: bool = True
+    huawei_target_ramp_kw_per_cycle: float = 0.5
+    huawei_target_ramp_up_kw_per_cycle: float = 0.3
+    huawei_target_ramp_down_kw_per_cycle: float = 1.0
 
     max_charge_kw: float = 50.0
     max_discharge_kw: float = 50.0
@@ -221,6 +232,19 @@ class EMSService:
                 "huawei_derate_percent": float(opts.huawei_derate_percent),
                 "huawei_control_mode": str(opts.huawei_control_mode),
                 "huawei_target_kw": float(opts.huawei_target_kw),
+                "huawei_follow_pcs_load": bool(opts.huawei_follow_pcs_load),
+                "pv_charge_enable": bool(opts.pv_charge_enable),
+                "pv_charge_extra_kw": float(opts.pv_charge_extra_kw),
+                "outage_prevent_overcharge_enable": bool(opts.outage_prevent_overcharge_enable),
+                "outage_prevent_draw_kw": float(opts.outage_prevent_draw_kw),
+                "outage_prevent_soc_low": int(opts.outage_prevent_soc_low),
+                "outage_prevent_soc_high": int(opts.outage_prevent_soc_high),
+                "outage_prevent_draw_active": False,
+                "huawei_target_ramp_enable": bool(opts.huawei_target_ramp_enable),
+                "huawei_target_ramp_kw_per_cycle": float(opts.huawei_target_ramp_kw_per_cycle),
+                "huawei_target_ramp_up_kw_per_cycle": float(opts.huawei_target_ramp_up_kw_per_cycle),
+                "huawei_target_ramp_down_kw_per_cycle": float(opts.huawei_target_ramp_down_kw_per_cycle),
+                "huawei_target_last_kw_written": None,
                 "auto_mode_enabled": True,
                 "operation_mode": opts.operation_mode,
                 "last_written_pcs_power_kw": 0.0,
@@ -1056,6 +1080,17 @@ class EMSService:
                     stat_row("PV Target", esc(fmt(huawei.get("pv_target_value")))),
                     stat_row("Control Mode", esc(fmt(control.get("huawei_control_mode")))),
                     stat_row("Target kW", esc(fmt(control.get("huawei_target_kw"), " kW"))),
+                    stat_row("Follow PCS Load", esc("Yes" if control.get("huawei_follow_pcs_load") else "No")),
+                    stat_row("PV Charge Enable", esc("Yes" if control.get("pv_charge_enable") else "No")),
+                    stat_row("PV Charge Extra", esc(fmt(control.get("pv_charge_extra_kw"), " kW"))),
+                    stat_row("Outage Prevent", esc("Yes" if control.get("outage_prevent_overcharge_enable") else "No")),
+                    stat_row("Prevent Draw", esc(fmt(control.get("outage_prevent_draw_kw"), " kW"))),
+                    stat_row("SOC Window", esc(f"{fmt(control.get('outage_prevent_soc_low'))}% - {fmt(control.get('outage_prevent_soc_high'))}%")),
+                    stat_row("Prevent Active", esc("Yes" if control.get("outage_prevent_draw_active") else "No")),
+                    stat_row("Target Ramp", esc("Yes" if control.get("huawei_target_ramp_enable") else "No")),
+                    stat_row("Ramp Up Step", esc(fmt(control.get("huawei_target_ramp_up_kw_per_cycle"), " kW/cycle"))),
+                    stat_row("Ramp Down Step", esc(fmt(control.get("huawei_target_ramp_down_kw_per_cycle"), " kW/cycle"))),
+                    stat_row("Last Target Written", esc(fmt(control.get("huawei_target_last_kw_written"), " kW"))),
                     stat_row("Derate %", esc(fmt(control.get("huawei_derate_percent"), "%"))),
                     stat_row("PV1", esc(f"{fmt(huawei.get('pv1_voltage_v'), ' V')} / {fmt(huawei.get('pv1_current_a'), ' A')}")),
                     stat_row("PV2", esc(f"{fmt(huawei.get('pv2_voltage_v'), ' V')} / {fmt(huawei.get('pv2_current_a'), ' A')}")),
@@ -1339,6 +1374,38 @@ class EMSService:
             if mode not in ("derate_percent", "target_kw"):
                 return False, "huawei_control_mode must be 'derate_percent' or 'target_kw'"
             self.state["control"]["huawei_control_mode"] = mode
+        if "huawei_follow_pcs_load" in payload and payload["huawei_follow_pcs_load"] is not None:
+            self.state["control"]["huawei_follow_pcs_load"] = bool(payload["huawei_follow_pcs_load"])
+        if "pv_charge_enable" in payload and payload["pv_charge_enable"] is not None:
+            self.state["control"]["pv_charge_enable"] = bool(payload["pv_charge_enable"])
+        if "pv_charge_extra_kw" in payload and payload["pv_charge_extra_kw"] is not None:
+            value = max(0.0, float(payload["pv_charge_extra_kw"]))
+            self.state["control"]["pv_charge_extra_kw"] = value
+        if "outage_prevent_overcharge_enable" in payload and payload["outage_prevent_overcharge_enable"] is not None:
+            self.state["control"]["outage_prevent_overcharge_enable"] = bool(payload["outage_prevent_overcharge_enable"])
+        if "outage_prevent_draw_kw" in payload and payload["outage_prevent_draw_kw"] is not None:
+            value = max(0.0, float(payload["outage_prevent_draw_kw"]))
+            self.state["control"]["outage_prevent_draw_kw"] = value
+        if "outage_prevent_soc_low" in payload and payload["outage_prevent_soc_low"] is not None:
+            value = int(max(0, min(100, int(payload["outage_prevent_soc_low"]))))
+            self.state["control"]["outage_prevent_soc_low"] = value
+        if "outage_prevent_soc_high" in payload and payload["outage_prevent_soc_high"] is not None:
+            value = int(max(0, min(100, int(payload["outage_prevent_soc_high"]))))
+            self.state["control"]["outage_prevent_soc_high"] = value
+        if "huawei_target_ramp_enable" in payload and payload["huawei_target_ramp_enable"] is not None:
+            self.state["control"]["huawei_target_ramp_enable"] = bool(payload["huawei_target_ramp_enable"])
+        if "huawei_target_ramp_kw_per_cycle" in payload and payload["huawei_target_ramp_kw_per_cycle"] is not None:
+            value = max(0.0, float(payload["huawei_target_ramp_kw_per_cycle"]))
+            self.state["control"]["huawei_target_ramp_kw_per_cycle"] = value
+            # Backward compatibility: if old single-step is provided, apply it to both.
+            self.state["control"]["huawei_target_ramp_up_kw_per_cycle"] = value
+            self.state["control"]["huawei_target_ramp_down_kw_per_cycle"] = value
+        if "huawei_target_ramp_up_kw_per_cycle" in payload and payload["huawei_target_ramp_up_kw_per_cycle"] is not None:
+            value = max(0.0, float(payload["huawei_target_ramp_up_kw_per_cycle"]))
+            self.state["control"]["huawei_target_ramp_up_kw_per_cycle"] = value
+        if "huawei_target_ramp_down_kw_per_cycle" in payload and payload["huawei_target_ramp_down_kw_per_cycle"] is not None:
+            value = max(0.0, float(payload["huawei_target_ramp_down_kw_per_cycle"]))
+            self.state["control"]["huawei_target_ramp_down_kw_per_cycle"] = value
         if "auto_mode_enabled" in payload and payload["auto_mode_enabled"] is not None:
             self.state["control"]["auto_mode_enabled"] = bool(payload["auto_mode_enabled"])
         if "operation_mode" in payload and payload["operation_mode"] is not None:
@@ -1956,7 +2023,91 @@ class EMSService:
                 point = control_points.get("pv_target_value")
             if not isinstance(point, dict):
                 point = {"address": 40120, "scale": 1}
+
+            follow_load = bool(self.state["control"].get("huawei_follow_pcs_load", False))
             target_kw = float(self.state["control"].get("huawei_target_kw", 0.0))
+            reason = "huawei_target_kw"
+            if follow_load:
+                grid_available = bool(self.state["grid"].get("is_available", True))
+                grid_incoming_kw = self.state["pcs"].get("grid_side_active_power_kw")
+                pcs_load_kw = self.state["pcs"].get("load_active_power_kw")
+
+                # Requested behaviour:
+                # - Grid ON: follow incoming grid kW.
+                # - Grid OFF: follow PCS load kW.
+                # Sign convention note: grid_side_active_power_kw < 0 means importing from grid.
+                source_name = ""
+                source_kw: float | None = None
+                if grid_available and grid_incoming_kw is not None:
+                    source_name = "grid_incoming"
+                    source_kw = max(0.0, -float(grid_incoming_kw))
+                elif (not grid_available) and pcs_load_kw is not None:
+                    source_name = "pcs_load"
+                    source_kw = abs(float(pcs_load_kw))
+                elif pcs_load_kw is not None:
+                    source_name = "pcs_load_fallback"
+                    source_kw = abs(float(pcs_load_kw))
+                elif grid_incoming_kw is not None:
+                    source_name = "grid_incoming_fallback"
+                    source_kw = max(0.0, -float(grid_incoming_kw))
+
+                if source_kw is not None:
+                    base_load_kw = source_kw
+                    if bool(self.state["control"].get("pv_charge_enable", False)):
+                        extra_kw = max(0.0, float(self.state["control"].get("pv_charge_extra_kw", 0.0)))
+                        allow_charge = float(self.state["pcs"].get("allow_charge_power_kw", 0.0) or 0.0)
+                        if allow_charge > 0.0:
+                            extra_kw = min(extra_kw, allow_charge)
+                        else:
+                            extra_kw = 0.0
+                        target_kw = base_load_kw + extra_kw
+                        reason = f"huawei_target_kw_follow_{source_name}_with_charge"
+                    else:
+                        target_kw = base_load_kw
+                        reason = f"huawei_target_kw_follow_{source_name}_no_charge"
+                else:
+                    reason = "huawei_target_kw_follow_no_source_value"
+
+            # Grid-fail anti-overcharge hysteresis:
+            # when active, we intentionally keep a small PCS draw by reducing Huawei target.
+            if bool(self.state["control"].get("outage_prevent_overcharge_enable", False)):
+                grid_available = bool(self.state["grid"].get("is_available", True))
+                soc_raw = self.state["pcs"].get("soc")
+                if not grid_available and soc_raw is not None:
+                    soc = int(soc_raw)
+                    low = int(self.state["control"].get("outage_prevent_soc_low", 95))
+                    high = int(self.state["control"].get("outage_prevent_soc_high", 98))
+                    if low > high:
+                        low, high = high, low
+                    active = bool(self.state["control"].get("outage_prevent_draw_active", False))
+                    if active and soc <= low:
+                        active = False
+                    elif (not active) and soc >= high:
+                        active = True
+                    self.state["control"]["outage_prevent_draw_active"] = active
+                    if active:
+                        draw_kw = max(0.0, float(self.state["control"].get("outage_prevent_draw_kw", 2.0)))
+                        target_kw = max(0.0, target_kw - draw_kw)
+                        reason = "outage_prevent_overcharge_draw"
+                elif grid_available:
+                    self.state["control"]["outage_prevent_draw_active"] = False
+
+            # Smooth target changes to avoid oscillation and abrupt inverter commands.
+            if bool(self.state["control"].get("huawei_target_ramp_enable", True)):
+                fallback_step = max(0.0, float(self.state["control"].get("huawei_target_ramp_kw_per_cycle", 0.5)))
+                ramp_up_step = max(0.0, float(self.state["control"].get("huawei_target_ramp_up_kw_per_cycle", fallback_step)))
+                ramp_down_step = max(0.0, float(self.state["control"].get("huawei_target_ramp_down_kw_per_cycle", fallback_step)))
+                prev_target_raw = self.state["control"].get("huawei_target_last_kw_written")
+                if prev_target_raw is not None:
+                    prev_target = float(prev_target_raw)
+                    delta = target_kw - prev_target
+                    if delta > ramp_up_step and ramp_up_step > 0.0:
+                        target_kw = prev_target + ramp_up_step
+                        reason = f"{reason}_ramp_up_limited"
+                    elif delta < -ramp_down_step and ramp_down_step > 0.0:
+                        target_kw = prev_target - ramp_down_step
+                        reason = f"{reason}_ramp_down_limited"
+
             target_kw = max(0.0, min(float(self.opts.huawei_max_power_kw), target_kw))
             scale = float(point.get("scale", 1.0))
             if scale <= 0:
@@ -1969,7 +2120,8 @@ class EMSService:
                 self.opts.huawei_unit_id,
                 self.opts.huawei_address_offset,
             )
-            self.state["control"]["policy_reason"] = "huawei_target_kw"
+            self.state["control"]["huawei_target_last_kw_written"] = target_kw
+            self.state["control"]["policy_reason"] = reason
             return
 
         point = control_points["active_power_percentage_derating"]

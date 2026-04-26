@@ -1,5 +1,5 @@
 name: PIBEMS
-version: 0.1.8.6
+version: 0.1.9.0
 slug: pibems
 description: Open-source EMS for Huawei + Megarevo PCS
 url: https://github.com/Mallis42/PIBEMS
@@ -45,6 +45,17 @@ options:
   huawei_derate_percent: 100.0
   huawei_control_mode: derate_percent
   huawei_target_kw: 0.0
+  huawei_follow_pcs_load: false
+  pv_charge_enable: false
+  pv_charge_extra_kw: 0.0
+  outage_prevent_overcharge_enable: false
+  outage_prevent_draw_kw: 2.0
+  outage_prevent_soc_low: 95
+  outage_prevent_soc_high: 98
+  huawei_target_ramp_enable: true
+  huawei_target_ramp_kw_per_cycle: 0.5
+  huawei_target_ramp_up_kw_per_cycle: 0.3
+  huawei_target_ramp_down_kw_per_cycle: 1.0
   max_charge_kw: 50.0
   max_discharge_kw: 50.0
   min_soc: 15
@@ -87,6 +98,17 @@ schema:
   huawei_derate_percent: float(0,100)
   huawei_control_mode: list(derate_percent|target_kw)
   huawei_target_kw: float(0,100000)
+  huawei_follow_pcs_load: bool
+  pv_charge_enable: bool
+  pv_charge_extra_kw: float(0,100000)
+  outage_prevent_overcharge_enable: bool
+  outage_prevent_draw_kw: float(0,100000)
+  outage_prevent_soc_low: int(0,100)
+  outage_prevent_soc_high: int(0,100)
+  huawei_target_ramp_enable: bool
+  huawei_target_ramp_kw_per_cycle: float(0,100000)
+  huawei_target_ramp_up_kw_per_cycle: float(0,100000)
+  huawei_target_ramp_down_kw_per_cycle: float(0,100000)
   max_charge_kw: float(0,100000)
   max_discharge_kw: float(0,100000)
   min_soc: int(0,100)
