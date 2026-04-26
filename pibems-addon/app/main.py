@@ -164,6 +164,7 @@ class Options:
 
     enable_huawei: bool = True
     enable_pcs_direct: bool = True
+    enable_pcs_control: bool = True
     enable_ems_server: bool = True
 
     poll_interval_sec: float = 1.0
@@ -245,6 +246,7 @@ class EMSService:
                 "huawei_target_ramp_up_kw_per_cycle": float(opts.huawei_target_ramp_up_kw_per_cycle),
                 "huawei_target_ramp_down_kw_per_cycle": float(opts.huawei_target_ramp_down_kw_per_cycle),
                 "huawei_target_last_kw_written": None,
+                "huawei_trace": {},
                 "auto_mode_enabled": True,
                 "operation_mode": opts.operation_mode,
                 "last_written_pcs_power_kw": 0.0,
@@ -390,6 +392,7 @@ class EMSService:
             "huawei_enabled": self.opts.enable_huawei,
             "huawei_connected": self.state["status"].get("huawei_connected", False),
             "pcs_enabled": self.opts.enable_pcs_direct,
+            "pcs_control_enabled": self.opts.enable_pcs_control,
             "pcs_connected": self.state["status"].get("pcs_connected", False),
             "ems_server_enabled": self.opts.enable_ems_server,
             "operation_mode": self.state["control"].get("operation_mode", "control"),
@@ -1049,6 +1052,7 @@ class EMSService:
         server = self.state.get("server", {})
         grid = self.state.get("grid", {})
         probe = self.state.get("pcs_direct_probe", {})
+        huawei_trace = control.get("huawei_trace", {}) if isinstance(control, dict) else {}
         now = datetime.now().strftime("%H:%M:%S")
 
         debug_json = esc(json.dumps(self.state, indent=2, default=str))
@@ -1098,6 +1102,35 @@ class EMSService:
                     stat_row("PV4", esc(f"{fmt(huawei.get('pv4_voltage_v'), ' V')} / {fmt(huawei.get('pv4_current_a'), ' A')}")),
                 ],
                 status.get("huawei_last_error"),
+            ),
+            card(
+                "Huawei Control Trace",
+                [
+                    stat_row("Trace Time", esc(fmt(huawei_trace.get("time")))),
+                    stat_row("Mode", esc(fmt(huawei_trace.get("mode")))),
+                    stat_row("Grid Available", esc(fmt(huawei_trace.get("grid_available")))),
+                    stat_row("Grid Active Raw", esc(fmt(huawei_trace.get("grid_side_active_power_kw_raw"), " kW"))),
+                    stat_row("Grid Import Calc", esc(fmt(huawei_trace.get("grid_import_kw"), " kW"))),
+                    stat_row("PCS Load Raw", esc(fmt(huawei_trace.get("pcs_load_kw_raw"), " kW"))),
+                    stat_row("Source Selected", esc(fmt(huawei_trace.get("source_name")))),
+                    stat_row("Base Load", esc(fmt(huawei_trace.get("base_load_kw"), " kW"))),
+                    stat_row("Charge Extra Req", esc(fmt(huawei_trace.get("pv_charge_extra_requested_kw"), " kW"))),
+                    stat_row("Allow Charge", esc(fmt(huawei_trace.get("allow_charge_kw"), " kW"))),
+                    stat_row("Charge Extra Applied", esc(fmt(huawei_trace.get("pv_charge_extra_applied_kw"), " kW"))),
+                    stat_row("Target Pre-Outage", esc(fmt(huawei_trace.get("target_pre_outage_kw"), " kW"))),
+                    stat_row("Outage Prevent Active", esc(fmt(huawei_trace.get("outage_prevent_draw_active")))),
+                    stat_row("Outage Draw Applied", esc(fmt(huawei_trace.get("outage_draw_applied_kw"), " kW"))),
+                    stat_row("Target Pre-Ramp", esc(fmt(huawei_trace.get("target_pre_ramp_kw"), " kW"))),
+                    stat_row("Prev Target", esc(fmt(huawei_trace.get("prev_target_kw"), " kW"))),
+                    stat_row("Delta", esc(fmt(huawei_trace.get("delta_kw"), " kW"))),
+                    stat_row("Ramp Up Step", esc(fmt(huawei_trace.get("ramp_up_step_kw"), " kW/cycle"))),
+                    stat_row("Ramp Down Step", esc(fmt(huawei_trace.get("ramp_down_step_kw"), " kW/cycle"))),
+                    stat_row("Ramp Action", esc(fmt(huawei_trace.get("ramp_action")))),
+                    stat_row("Target Final", esc(fmt(huawei_trace.get("target_final_kw"), " kW"))),
+                    stat_row("Write Raw", esc(fmt(huawei_trace.get("write_raw")))),
+                    stat_row("Write Scale", esc(fmt(huawei_trace.get("write_scale")))),
+                    stat_row("Policy Reason", esc(fmt(huawei_trace.get("policy_reason")))),
+                ],
             ),
             card(
                 "PCS Battery",
@@ -1624,7 +1657,7 @@ class EMSService:
                 if self.opts.enable_huawei:
                     await self._control_huawei()
                 # Run PCS control in both direct-TCP mode and EMS-server mode.
-                if self.opts.enable_pcs_direct or self.server_ctx is not None:
+                if self.opts.enable_pcs_control and (self.opts.enable_pcs_direct or self.server_ctx is not None):
                     await self._control_pcs()
             except Exception as exc:  # noqa: BLE001
                 self.state["errors"].append(f"control_loop: {exc}")
@@ -2027,10 +2060,39 @@ class EMSService:
             follow_load = bool(self.state["control"].get("huawei_follow_pcs_load", False))
             target_kw = float(self.state["control"].get("huawei_target_kw", 0.0))
             reason = "huawei_target_kw"
+            trace: dict[str, Any] = {
+                "time": _now_iso(),
+                "mode": "target_kw",
+                "grid_available": bool(self.state["grid"].get("is_available", True)),
+                "grid_side_active_power_kw_raw": None,
+                "grid_import_kw": None,
+                "pcs_load_kw_raw": None,
+                "source_name": "manual",
+                "base_load_kw": None,
+                "pv_charge_extra_requested_kw": 0.0,
+                "allow_charge_kw": None,
+                "pv_charge_extra_applied_kw": 0.0,
+                "target_pre_outage_kw": None,
+                "outage_prevent_draw_active": bool(self.state["control"].get("outage_prevent_draw_active", False)),
+                "outage_draw_applied_kw": 0.0,
+                "target_pre_ramp_kw": None,
+                "prev_target_kw": self.state["control"].get("huawei_target_last_kw_written"),
+                "delta_kw": None,
+                "ramp_up_step_kw": None,
+                "ramp_down_step_kw": None,
+                "ramp_action": "none",
+                "target_final_kw": None,
+                "write_raw": None,
+                "write_scale": None,
+                "policy_reason": None,
+            }
             if follow_load:
                 grid_available = bool(self.state["grid"].get("is_available", True))
                 grid_incoming_kw = self.state["pcs"].get("grid_side_active_power_kw")
                 pcs_load_kw = self.state["pcs"].get("load_active_power_kw")
+                trace["grid_available"] = grid_available
+                trace["grid_side_active_power_kw_raw"] = grid_incoming_kw
+                trace["pcs_load_kw_raw"] = pcs_load_kw
 
                 # Requested behaviour:
                 # - Grid ON: follow incoming grid kW.
@@ -2041,6 +2103,7 @@ class EMSService:
                 if grid_available and grid_incoming_kw is not None:
                     source_name = "grid_incoming"
                     source_kw = max(0.0, -float(grid_incoming_kw))
+                    trace["grid_import_kw"] = source_kw
                 elif (not grid_available) and pcs_load_kw is not None:
                     source_name = "pcs_load"
                     source_kw = abs(float(pcs_load_kw))
@@ -2050,23 +2113,32 @@ class EMSService:
                 elif grid_incoming_kw is not None:
                     source_name = "grid_incoming_fallback"
                     source_kw = max(0.0, -float(grid_incoming_kw))
+                    trace["grid_import_kw"] = source_kw
 
                 if source_kw is not None:
                     base_load_kw = source_kw
+                    trace["source_name"] = source_name
+                    trace["base_load_kw"] = base_load_kw
                     if bool(self.state["control"].get("pv_charge_enable", False)):
                         extra_kw = max(0.0, float(self.state["control"].get("pv_charge_extra_kw", 0.0)))
+                        trace["pv_charge_extra_requested_kw"] = extra_kw
                         allow_charge = float(self.state["pcs"].get("allow_charge_power_kw", 0.0) or 0.0)
+                        trace["allow_charge_kw"] = allow_charge
                         if allow_charge > 0.0:
                             extra_kw = min(extra_kw, allow_charge)
                         else:
                             extra_kw = 0.0
+                        trace["pv_charge_extra_applied_kw"] = extra_kw
                         target_kw = base_load_kw + extra_kw
                         reason = f"huawei_target_kw_follow_{source_name}_with_charge"
                     else:
                         target_kw = base_load_kw
                         reason = f"huawei_target_kw_follow_{source_name}_no_charge"
                 else:
+                    trace["source_name"] = "no_source"
                     reason = "huawei_target_kw_follow_no_source_value"
+
+            trace["target_pre_outage_kw"] = target_kw
 
             # Grid-fail anti-overcharge hysteresis:
             # when active, we intentionally keep a small PCS draw by reducing Huawei target.
@@ -2088,24 +2160,33 @@ class EMSService:
                     if active:
                         draw_kw = max(0.0, float(self.state["control"].get("outage_prevent_draw_kw", 2.0)))
                         target_kw = max(0.0, target_kw - draw_kw)
+                        trace["outage_draw_applied_kw"] = draw_kw
                         reason = "outage_prevent_overcharge_draw"
                 elif grid_available:
                     self.state["control"]["outage_prevent_draw_active"] = False
+            trace["outage_prevent_draw_active"] = bool(self.state["control"].get("outage_prevent_draw_active", False))
+            trace["target_pre_ramp_kw"] = target_kw
 
             # Smooth target changes to avoid oscillation and abrupt inverter commands.
             if bool(self.state["control"].get("huawei_target_ramp_enable", True)):
                 fallback_step = max(0.0, float(self.state["control"].get("huawei_target_ramp_kw_per_cycle", 0.5)))
                 ramp_up_step = max(0.0, float(self.state["control"].get("huawei_target_ramp_up_kw_per_cycle", fallback_step)))
                 ramp_down_step = max(0.0, float(self.state["control"].get("huawei_target_ramp_down_kw_per_cycle", fallback_step)))
+                trace["ramp_up_step_kw"] = ramp_up_step
+                trace["ramp_down_step_kw"] = ramp_down_step
                 prev_target_raw = self.state["control"].get("huawei_target_last_kw_written")
                 if prev_target_raw is not None:
                     prev_target = float(prev_target_raw)
                     delta = target_kw - prev_target
+                    trace["prev_target_kw"] = prev_target
+                    trace["delta_kw"] = delta
                     if delta > ramp_up_step and ramp_up_step > 0.0:
                         target_kw = prev_target + ramp_up_step
+                        trace["ramp_action"] = "up_limited"
                         reason = f"{reason}_ramp_up_limited"
                     elif delta < -ramp_down_step and ramp_down_step > 0.0:
                         target_kw = prev_target - ramp_down_step
+                        trace["ramp_action"] = "down_limited"
                         reason = f"{reason}_ramp_down_limited"
 
             target_kw = max(0.0, min(float(self.opts.huawei_max_power_kw), target_kw))
@@ -2120,7 +2201,12 @@ class EMSService:
                 self.opts.huawei_unit_id,
                 self.opts.huawei_address_offset,
             )
+            trace["target_final_kw"] = target_kw
+            trace["write_raw"] = raw
+            trace["write_scale"] = scale
+            trace["policy_reason"] = reason
             self.state["control"]["huawei_target_last_kw_written"] = target_kw
+            self.state["control"]["huawei_trace"] = trace
             self.state["control"]["policy_reason"] = reason
             return
 
@@ -2138,6 +2224,14 @@ class EMSService:
             self.opts.huawei_unit_id,
             self.opts.huawei_address_offset,
         )
+        self.state["control"]["huawei_trace"] = {
+            "time": _now_iso(),
+            "mode": "derate_percent",
+            "target_final_kw": None,
+            "write_raw": raw,
+            "write_scale": 0.1,
+            "policy_reason": self.state["control"].get("policy_reason"),
+        }
 
     async def _control_pcs(self) -> None:
         if self._is_read_only_mode():
