@@ -581,18 +581,26 @@
                     const s16 = result.s16;
                     const known = resolveKnown(requestedAddr, wireAddr, offset);
                     const docAddr = known ? known.docAddr : requestedAddr;
+                    const isTentative = !!(known && known.name && known.name.startsWith('re_tentative_'));
 
                     let knownCell = '';
                     let scaledCell = '';
                     if (known) {
-                        knownCell = '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.85em;font-weight:600;">' + known.name + '</span>';
+                        const badgeStyle = isTentative
+                            ? 'background:#fff3cd;color:#8a4b00;'
+                            : 'background:#d4edda;color:#155724;';
+                        const badgeText = isTentative ? (known.name + ' (tentative)') : known.name;
+                        knownCell = '<span style="' + badgeStyle + 'padding:2px 8px;border-radius:10px;font-size:0.85em;font-weight:600;">' + badgeText + '</span>';
                         const rawVal = known.signed ? s16 : u16;
                         const scaled = (known.scale === 1) ? rawVal : Math.round(rawVal * known.scale * 1000) / 1000;
                         const unitStr = known.unit ? ' ' + known.unit : '';
-                        scaledCell = '<strong style="color:#0056b3;">' + scaled + unitStr + '</strong>';
+                        const scaledColor = isTentative ? '#8a4b00' : '#0056b3';
+                        scaledCell = '<strong style="color:' + scaledColor + ';">' + scaled + unitStr + '</strong>';
                     }
 
-                    const rowBg = known ? ' style="background:#f0faf2;"' : '';
+                    const rowBg = known
+                        ? (isTentative ? ' style="background:#fff8e1;"' : ' style="background:#f0faf2;"')
+                        : '';
                     html += '<tr' + rowBg + '>';
                     html += '<td><strong>' + requestedAddr + '</strong></td>';
                     html += '<td style="color:#666;">' + wireAddr + '</td>';
