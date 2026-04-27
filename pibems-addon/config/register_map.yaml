@@ -120,6 +120,12 @@ pcs:
       quantity: 1
       datatype: i16
       scale: 0.1
+    heartbeat_seconds_counter:
+      type: input
+      address: 2189
+      quantity: 1
+      datatype: u16
+      scale: 1
     dc_side_voltage_v:
       type: input
       address: 2267
