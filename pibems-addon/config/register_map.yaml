@@ -308,7 +308,7 @@ pcs:
       address: 2315
       quantity: 1
       datatype: u16
-      scale: 1
+      scale: 0.01
     constant_voltage:
       type: input
       address: 2316
@@ -486,6 +486,18 @@ pcs:
       address: 2770
       quantity: 1
       datatype: u16
+    output_voltage_level:
+      type: holding
+      address: 2774
+      quantity: 1
+      datatype: u16
+      scale: 1
+    output_frequency_level:
+      type: holding
+      address: 2775
+      quantity: 1
+      datatype: u16
+      scale: 0.01
     charge_power_limit:
       type: holding
       address: 2776
