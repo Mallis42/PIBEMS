@@ -297,6 +297,18 @@ pcs:
       quantity: 1
       datatype: u16
       scale: 1
+    output_voltage_level:
+      type: input
+      address: 2314
+      quantity: 1
+      datatype: u16
+      scale: 1
+    output_frequency_level:
+      type: input
+      address: 2315
+      quantity: 1
+      datatype: u16
+      scale: 1
     constant_voltage:
       type: input
       address: 2316
