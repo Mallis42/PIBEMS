@@ -297,6 +297,30 @@ pcs:
       quantity: 1
       datatype: u16
       scale: 1
+    constant_voltage:
+      type: input
+      address: 2316
+      quantity: 1
+      datatype: u16
+      scale: 1
+    constant_current:
+      type: input
+      address: 2321
+      quantity: 1
+      datatype: u16
+      scale: 1
+    grid_capacity:
+      type: input
+      address: 2528
+      quantity: 1
+      datatype: u16
+      scale: 1
+    grid_charge_soc:
+      type: input
+      address: 2529
+      quantity: 1
+      datatype: u16
+      scale: 1
     force_charge_start_cell_voltage_mv:
       type: input
       address: 2344
