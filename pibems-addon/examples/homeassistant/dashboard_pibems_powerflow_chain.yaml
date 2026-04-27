@@ -1,0 +1,82 @@
+title: PIBEMS Power Flow
+views:
+  - title: Power
+    path: power
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: PV Overview (Grid -> PCS -> Battery -> PV)
+          - type: custom:power-flow-card-plus
+            clickable_entities: true
+            title: PIBEMS Power Flow
+            display_zero_lines:
+              mode: show
+              transparency: 70
+              grey_color:
+                - 189
+                - 189
+                - 189
+            use_new_flow_rate_model: true
+            w_decimals: 1
+            kw_decimals: 1
+            max_expected_power: 100000
+            min_flow_rate: 0.4
+            max_flow_rate: 6
+            entities:
+              grid:
+                entity: sensor.pibems_card_grid_power
+                name: Grid
+                icon: mdi:transmission-tower
+                color_circle: true
+              home:
+                entity: sensor.pibems_card_pcs_power
+                name: PCS
+                icon: mdi:battery-charging-medium
+                color_circle: true
+              battery:
+                entity: sensor.pibems_card_battery_power
+                state_of_charge: sensor.pibems_card_soc
+                name: Battery
+                icon: mdi:battery
+                color_circle: true
+                # PIBEMS command sign: +discharge, -charge. Card expects opposite.
+                invert_state: true
+              solar:
+                entity: sensor.pibems_card_pv_power
+                name: PV
+                icon: mdi:solar-power
+                color_circle: true
+              individual:
+                - entity: sensor.pibems_card_ems_target
+                  name: EMS Target
+                  icon: mdi:target
+                  color: "#8e9ab3"
+                  color_icon: true
+                  unit_of_measurement: kW
+                  display_zero: true
+
+          - type: markdown
+            content: >-
+              Setup note:
+              Import examples/homeassistant/rest.yaml and
+              examples/homeassistant/package_pibems_card_compat.yaml into Home Assistant first,
+              then reload template entities.
+
+              Flow orientation note:
+              This card uses a fixed node geometry. The labels are mapped so the
+              center node is PCS, plus Grid, Battery, and PV around it.
+              Direction and line thickness follow live signed sensor power values.
+
+      - type: grid
+        cards:
+          - type: entities
+            title: Debug Inputs Used By Card
+            entities:
+              - sensor.pibems_card_grid_power
+              - sensor.pibems_card_pcs_power
+              - sensor.pibems_card_battery_power
+              - sensor.pibems_card_soc
+              - sensor.pibems_card_pv_power
+              - sensor.pibems_card_ems_target

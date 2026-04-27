@@ -1,0 +1,49 @@
+template:
+  - sensor:
+      - name: PIBEMS Card Grid Power
+        unique_id: pibems_card_grid_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_pcs_meter_total_power') %}
+          {% set b = states('sensor.pibems_pcs_meter_total_power_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card PCS Power
+        unique_id: pibems_card_pcs_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_pcs_active_power') %}
+          {% set b = states('sensor.pibems_pcs_load_active_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card Battery Power
+        unique_id: pibems_card_battery_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_last_written_pcs_power') %}
+          {% set b = states('sensor.pibems_last_written_pcs_power_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card PV Power
+        unique_id: pibems_card_pv_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_huawei_active_power') %}
+          {% set b = states('sensor.pibems_huawei_active_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card SOC
+        unique_id: pibems_card_soc_percent
+        unit_of_measurement: "%"
+        state: >-
+          {% set a = states('sensor.pibems_pcs_soc') %}
+          {% set b = states('sensor.pibems_soc') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card EMS Target
+        unique_id: pibems_card_effective_target_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_effective_target_power') %}
+          {% set b = states('sensor.pibems_effective_target_power_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}

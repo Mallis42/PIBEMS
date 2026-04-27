@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIBEMS Modbus Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .back-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr auto;
+            gap: 10px;
+            align-items: flex-end;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #1e3c72;
+            box-shadow: 0 0 0 2px rgba(30,60,114,0.1);
+        }
+        button {
+            background: #2a5298;
+            color: white;
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1e3c72;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #2a5298;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .results-table thead {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        .results-table th {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #ddd;
+        }
+        .results-table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .results-table tr:hover {
+            background: #fafafa;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            font-weight: 600;
+        }
+        .failed {
+            background: #f8d7da;
+            color: #721c24;
+            font-weight: 600;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            border-left: 4px solid #2a5298;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2a5298;
+        }
+        .error {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .success-msg {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="./" class="back-link">← Back to Dashboard</a>
+        <h1>Modbus Register Scanner</h1>
+
+        <div class="card">
+            <div class="form-group">
+                <div>
+                    <label for="device">Device:</label>
+                    <select id="device">
+                        <option value="pcs">PCS</option>
+                        <option value="huawei">Huawei</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="regType">Register Type:</label>
+                    <select id="regType">
+                        <option value="input">Input</option>
+                        <option value="holding">Holding</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="startAddr">Start Address:</label>
+                    <input type="number" id="startAddr" value="2100" min="0" max="65535">
+                </div>
+                <div>
+                    <label for="endAddr">End Address:</label>
+                    <input type="number" id="endAddr" value="2500" min="0" max="65535">
+                </div>
+                <button onclick="startScan()">Scan</button>
+            </div>
+
+            <div id="statusArea"></div>
+
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script>
+        let scanInProgress = false;
+
+        function startScan() {
+            const device = document.getElementById('device').value;
+            const regType = document.getElementById('regType').value;
+            const startAddr = parseInt(document.getElementById('startAddr').value);
+            const endAddr = parseInt(document.getElementById('endAddr').value);
+
+            if (!device || startAddr === null || endAddr === null) {
+                showError('Please fill in all fields');
+                return;
+            }
+
+            if (startAddr > endAddr) {
+                showError('Start address must be less than or equal to end address');
+                return;
+            }
+
+            if (endAddr - startAddr > 1000) {
+                showError('Scan range too large (max 1000 registers)');
+                return;
+            }
+
+            scanInProgress = true;
+            clearResults();
+            showLoading('Scanning ' + (endAddr - startAddr + 1) + ' registers...');
+
+            const scanPath = './scan';
+
+            fetch(scanPath, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    device: device,
+                    start_addr: startAddr,
+                    end_addr: endAddr,
+                    reg_type: regType
+                })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    return res.text().then(text => {
+                        throw new Error('HTTP ' + res.status + ': ' + text);
+                    });
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    showError(data.error);
+                } else {
+                    displayResults(data);
+                }
+            })
+            .catch(err => {
+                console.error('Scan error:', err);
+                showError('Scan failed: ' + err.toString());
+            })
+            .finally(() => {
+                scanInProgress = false;
+            });
+        }
+
+        function buildCandidateMapHtml(data, addresses, results) {
+            const keyPoints = [
+                {name: 'alarm_word_1', doc: 2100},
+                {name: 'pcs_status_word', doc: 2105},
+                {name: 'monitor_alarm_word', doc: 2107},
+                {name: 'total_power_meter', doc: 2218},
+                {name: 'igbt_temperature_c', doc: 2270},
+                {name: 'load_active_power', doc: 2326},
+                {name: 'load_reactive_power', doc: 2327},
+                {name: 'load_apparent_power', doc: 2328},
+            ];
+
+            const successAddrs = addresses.filter(addr => results[addr] && results[addr].success);
+            if (successAddrs.length === 0) {
+                return '';
+            }
+            const successSet = new Set(successAddrs);
+
+            const candidateScores = {};
+            successAddrs.forEach(addr => {
+                const off = addr - 2270;
+                let score = 0;
+                keyPoints.forEach(p => {
+                    if (successSet.has(p.doc + off)) {
+                        score += 1;
+                    }
+                });
+                if (score >= 3) {
+                    candidateScores[off] = Math.max(candidateScores[off] || 0, score);
+                }
+            });
+
+            if (!(data.address_offset in candidateScores)) {
+                let currentScore = 0;
+                keyPoints.forEach(p => {
+                    if (successSet.has(p.doc + data.address_offset)) {
+                        currentScore += 1;
+                    }
+                });
+                candidateScores[data.address_offset] = currentScore;
+            }
+
+            const topOffsets = Object.keys(candidateScores)
+                .map(Number)
+                .sort((a, b) => (candidateScores[b] - candidateScores[a]) || (Math.abs(a - data.address_offset) - Math.abs(b - data.address_offset)))
+                .slice(0, 3);
+
+            let html = '';
+            html += '<div style="margin-top: 15px; padding: 10px; background: #eef5ff; border-radius: 4px;">';
+            html += '<p><strong>Candidate map hints (auto-detected):</strong></p>';
+            html += '<p style="font-size: 12px; color: #555; margin-bottom: 8px;">Shows likely offsets based on key PCS points and decoded U16/S16 values.</p>';
+
+            topOffsets.forEach(off => {
+                html += '<div style="margin-top: 10px; padding: 8px; background: white; border: 1px solid #d9e7ff; border-radius: 4px;">';
+                html += '<div style="font-weight: 600; margin-bottom: 6px;">Offset ' + off + ' (score ' + candidateScores[off] + '/8)' + (off === data.address_offset ? ' • current' : '') + '</div>';
+                html += '<table class="results-table">';
+                html += '<thead><tr><th>Point</th><th>Doc Addr</th><th>Wire Addr</th><th>U16</th><th>S16</th></tr></thead><tbody>';
+
+                keyPoints.forEach(p => {
+                    const wire = p.doc + off;
+                    const r = results[wire];
+                    const ok = !!(r && r.success);
+                    if (!ok) {
+                        return;
+                    }
+                    html += '<tr>';
+                    html += '<td>' + p.name + '</td>';
+                    html += '<td>' + p.doc + '</td>';
+                    html += '<td>' + wire + '</td>';
+                    html += '<td>' + r.u16 + '</td>';
+                    html += '<td>' + r.s16 + '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                html += '</div>';
+            });
+
+            html += '</div>';
+            return html;
+        }
+
+        const KNOWN_REGISTERS = {
+            2100: {name:'alarm_word_1',           signed:false, scale:1,    unit:''},
+            2105: {name:'pcs_status_word',         signed:false, scale:1,    unit:''},
+            2107: {name:'monitor_alarm_word',      signed:false, scale:1,    unit:''},
+            // 2127..2135 in your dump decodes as ASCII: "MEGA-TS50    "
+            2127: {name:'model_ascii_word_0',      signed:false, scale:1,    unit:'ascii-u16'},
+            2128: {name:'model_ascii_word_1',      signed:false, scale:1,    unit:'ascii-u16'},
+            2129: {name:'model_ascii_word_2',      signed:false, scale:1,    unit:'ascii-u16'},
+            2130: {name:'model_ascii_word_3',      signed:false, scale:1,    unit:'ascii-u16'},
+            2131: {name:'model_ascii_word_4',      signed:false, scale:1,    unit:'ascii-u16'},
+            2132: {name:'model_ascii_word_5',      signed:false, scale:1,    unit:'ascii-u16'},
+            2133: {name:'model_ascii_word_6',      signed:false, scale:1,    unit:'ascii-u16'},
+            2134: {name:'model_ascii_word_7',      signed:false, scale:1,    unit:'ascii-u16'},
+            2135: {name:'model_ascii_word_8',      signed:false, scale:1,    unit:'ascii-u16'},
+            2136: {name:'model_ascii_terminator',  signed:false, scale:1,    unit:''},
+            2157: {name:'re_tentative_2157',       signed:true,  scale:1,    unit:''},
+            2158: {name:'re_tentative_2158',       signed:true,  scale:1,    unit:''},
+            2159: {name:'re_tentative_2159',       signed:true,  scale:1,    unit:''},
+            2160: {name:'re_tentative_2160',       signed:true,  scale:1,    unit:''},
+            2161: {name:'re_tentative_2161',       signed:true,  scale:1,    unit:''},
+            2162: {name:'re_tentative_2162',       signed:true,  scale:1,    unit:''},
+            2177: {name:'re_tentative_2177',       signed:true,  scale:1,    unit:''},
+            2178: {name:'re_tentative_2178',       signed:true,  scale:1,    unit:''},
+            2179: {name:'re_tentative_2179',       signed:true,  scale:1,    unit:''},
+            2180: {name:'re_tentative_2180',       signed:true,  scale:1,    unit:''},
+            2181: {name:'re_tentative_2181',       signed:true,  scale:1,    unit:''},
+            2182: {name:'re_tentative_2182',       signed:true,  scale:1,    unit:''},
+            2183: {name:'re_tentative_2183',       signed:true,  scale:1,    unit:''},
+            2184: {name:'re_tentative_2184',       signed:true,  scale:1,    unit:''},
+            2185: {name:'re_tentative_2185',       signed:true,  scale:1,    unit:''},
+            2186: {name:'re_tentative_2186',       signed:true,  scale:1,    unit:''},
+            2187: {name:'re_tentative_2187',       signed:true,  scale:1,    unit:''},
+            2188: {name:'re_tentative_2188',       signed:true,  scale:1,    unit:''},
+            2189: {name:'re_tentative_2189',       signed:true,  scale:1,    unit:''},
+            2207: {name:'grid_voltage_ab',         signed:false, scale:0.1,  unit:'V'},
+            2208: {name:'grid_voltage_bc',         signed:false, scale:0.1,  unit:'V'},
+            2209: {name:'grid_voltage_ca',         signed:false, scale:0.1,  unit:'V'},
+            2210: {name:'inverter_current_a',      signed:true,  scale:0.1,  unit:'A'},
+            2211: {name:'inverter_current_b',      signed:true,  scale:0.1,  unit:'A'},
+            2212: {name:'inverter_current_c',      signed:true,  scale:0.1,  unit:'A'},
+            2213: {name:'inverter_frequency',      signed:false, scale:0.01, unit:'Hz'},
+            2214: {name:'pcs_power_factor',        signed:true,  scale:0.01, unit:''},
+            2215: {name:'load_active_power',       signed:true,  scale:0.1,  unit:'kW'},
+            2216: {name:'load_reactive_power',     signed:true,  scale:0.1,  unit:'kvar'},
+            2217: {name:'load_apparent_power',     signed:true,  scale:0.1,  unit:'kVA'},
+            2218: {name:'total_power_meter',       signed:true,  scale:0.1,  unit:'kW'},
+            2267: {name:'dc_side_voltage',         signed:true,  scale:0.1,  unit:'V'},
+            2268: {name:'dc_side_current',         signed:true,  scale:0.1,  unit:'A'},
+            2269: {name:'dc_side_power',           signed:true,  scale:0.1,  unit:'kW'},
+            2270: {name:'igbt_temperature',        signed:true,  scale:0.1,  unit:'°C'},
+            2271: {name:'ambient_temperature',     signed:true,  scale:0.1,  unit:'°C'},
+            2272: {name:'re_tentative_2272',       signed:true,  scale:1,    unit:''},
+            2273: {name:'re_tentative_2273',       signed:true,  scale:1,    unit:''},
+            2274: {name:'re_tentative_2274',       signed:true,  scale:1,    unit:''},
+            2275: {name:'re_tentative_2275',       signed:true,  scale:1,    unit:''},
+            2276: {name:'re_tentative_2276',       signed:true,  scale:1,    unit:''},
+            2277: {name:'re_tentative_2277',       signed:true,  scale:1,    unit:''},
+            2278: {name:'re_tentative_2278',       signed:true,  scale:1,    unit:''},
+            2279: {name:'re_tentative_2279',       signed:true,  scale:1,    unit:''},
+            2280: {name:'re_tentative_2280',       signed:true,  scale:1,    unit:''},
+            2281: {name:'re_tentative_2281',       signed:true,  scale:1,    unit:''},
+            2282: {name:'re_tentative_2282',       signed:true,  scale:1,    unit:''},
+            2283: {name:'re_tentative_2283',       signed:true,  scale:1,    unit:''},
+            2284: {name:'re_tentative_2284',       signed:true,  scale:1,    unit:''},
+            2285: {name:'re_tentative_2285',       signed:true,  scale:1,    unit:''},
+            2286: {name:'re_tentative_2286',       signed:true,  scale:1,    unit:''},
+            2287: {name:'re_tentative_2287',       signed:true,  scale:1,    unit:''},
+            2288: {name:'re_tentative_2288',       signed:true,  scale:1,    unit:''},
+            2314: {name:'re_tentative_2314',       signed:true,  scale:1,    unit:''},
+            2315: {name:'re_tentative_2315',       signed:true,  scale:1,    unit:''},
+            2316: {name:'re_tentative_2316',       signed:true,  scale:1,    unit:''},
+            2317: {name:'re_tentative_2317',       signed:true,  scale:1,    unit:''},
+            2318: {name:'re_tentative_2318',       signed:true,  scale:1,    unit:''},
+            2319: {name:'re_tentative_2319',       signed:true,  scale:1,    unit:''},
+            2320: {name:'re_tentative_2320',       signed:true,  scale:1,    unit:''},
+            2321: {name:'re_tentative_2321',       signed:true,  scale:1,    unit:''},
+            2322: {name:'re_tentative_2322',       signed:true,  scale:1,    unit:''},
+            2323: {name:'re_tentative_2323',       signed:true,  scale:1,    unit:''},
+            2324: {name:'re_tentative_2324',       signed:true,  scale:1,    unit:''},
+            2325: {name:'re_tentative_2325',       signed:true,  scale:1,    unit:''},
+            2326: {name:'re_tentative_2326',       signed:true,  scale:1,    unit:''},
+            2327: {name:'re_tentative_2327',       signed:true,  scale:1,    unit:''},
+            2328: {name:'re_tentative_2328',       signed:true,  scale:1,    unit:''},
+            2329: {name:'re_tentative_2329',       signed:true,  scale:1,    unit:''},
+            2330: {name:'re_tentative_2330',       signed:true,  scale:1,    unit:''},
+            2331: {name:'re_tentative_2331',       signed:true,  scale:1,    unit:''},
+            2332: {name:'re_tentative_2332',       signed:true,  scale:1,    unit:''},
+            2333: {name:'re_tentative_2333',       signed:true,  scale:1,    unit:''},
+            2237: {name:'grid_side_voltage_ab',    signed:true,  scale:0.1,  unit:'V'},
+            2238: {name:'grid_side_voltage_bc',    signed:true,  scale:0.1,  unit:'V'},
+            2239: {name:'grid_side_voltage_ca',    signed:true,  scale:0.1,  unit:'V'},
+            2240: {name:'grid_side_current_a',     signed:true,  scale:0.1,  unit:'A'},
+            2241: {name:'grid_side_current_b',     signed:true,  scale:0.1,  unit:'A'},
+            2242: {name:'grid_side_current_c',     signed:true,  scale:0.1,  unit:'A'},
+            2243: {name:'grid_side_frequency',     signed:false, scale:0.01, unit:'Hz'},
+            2244: {name:'grid_side_power_factor',  signed:true,  scale:0.01, unit:''},
+            2245: {name:'grid_side_active_power',  signed:true,  scale:0.1,  unit:'kW'},
+            2246: {name:'grid_side_reactive_power',signed:true,  scale:0.1,  unit:'kvar'},
+            2247: {name:'grid_side_apparent_power',signed:true,  scale:0.1,  unit:'kVA'},
+            2337: {name:'dod_on_grid',             signed:false, scale:1,    unit:'%'},
+            2338: {name:'dod_off_grid',            signed:false, scale:1,    unit:'%'},
+            2339: {name:'charge_voltage_upper_limit', signed:false, scale:1, unit:'V'},
+            2340: {name:'discharge_voltage_lower_limit', signed:false, scale:1, unit:'V'},
+            2341: {name:'charge_current_limit_setting', signed:false, scale:1, unit:'A'},
+            2344: {name:'force_charge_start_cell_voltage', signed:false, scale:1, unit:'mV'},
+            2345: {name:'force_charge_stop_cell_voltage', signed:false, scale:1, unit:'mV'},
+            2347: {name:'battery_voltage',         signed:false, scale:0.1,  unit:'V'},
+            2348: {name:'battery_current',         signed:true,  scale:0.1,  unit:'A'},
+            2349: {name:'soc',                     signed:false, scale:1,    unit:'%'},
+            2350: {name:'soh',                     signed:false, scale:1,    unit:'%'},
+            2351: {name:'max_cell_voltage',        signed:false, scale:1,    unit:'mV'},
+            2352: {name:'min_cell_voltage',        signed:false, scale:1,    unit:'mV'},
+            2353: {name:'max_cell_temp',           signed:false, scale:0.1,  unit:'°C'},
+            2354: {name:'min_cell_temp',           signed:false, scale:0.1,  unit:'°C'},
+            2355: {name:'charge_current_limit',    signed:false, scale:0.1,  unit:'A'},
+            2356: {name:'discharge_current_limit', signed:false, scale:0.1,  unit:'A'},
+            2357: {name:'allow_charge_power',      signed:false, scale:1,    unit:'kW'},
+            2358: {name:'allow_discharge_power',   signed:false, scale:1,    unit:'kW'},
+            2359: {name:'battery_status',          signed:false, scale:1,    unit:'enum'},
+            2360: {name:'re_tentative_2360',       signed:true,  scale:1,    unit:''},
+            2361: {name:'re_tentative_2361',       signed:true,  scale:1,    unit:''},
+            2362: {name:'re_tentative_2362',       signed:true,  scale:1,    unit:''},
+            2363: {name:'re_tentative_2363',       signed:true,  scale:1,    unit:''},
+            2364: {name:'re_tentative_2364',       signed:true,  scale:1,    unit:''},
+            2365: {name:'re_tentative_2365',       signed:true,  scale:1,    unit:''},
+            2366: {name:'re_tentative_2366',       signed:true,  scale:1,    unit:''},
+            2367: {name:'re_tentative_2367',       signed:true,  scale:1,    unit:''},
+            2368: {name:'re_tentative_2368',       signed:true,  scale:1,    unit:''},
+            2369: {name:'re_tentative_2369',       signed:true,  scale:1,    unit:''},
+            2370: {name:'re_tentative_2370',       signed:true,  scale:1,    unit:''},
+            2371: {name:'re_tentative_2371',       signed:true,  scale:1,    unit:''},
+            2372: {name:'re_tentative_2372',       signed:true,  scale:1,    unit:''},
+            2373: {name:'re_tentative_2373',       signed:true,  scale:1,    unit:''},
+            2374: {name:'re_tentative_2374',       signed:true,  scale:1,    unit:''},
+            2375: {name:'re_tentative_2375',       signed:true,  scale:1,    unit:''},
+            2427: {name:'re_tentative_2427',       signed:true,  scale:1,    unit:''},
+            2428: {name:'re_tentative_2428',       signed:true,  scale:1,    unit:''},
+            2429: {name:'re_tentative_2429',       signed:true,  scale:1,    unit:''},
+            2430: {name:'re_tentative_2430',       signed:true,  scale:1,    unit:''},
+            2431: {name:'re_tentative_2431',       signed:true,  scale:1,    unit:''},
+            2432: {name:'re_tentative_2432',       signed:true,  scale:1,    unit:''},
+            2527: {name:'re_tentative_2527',       signed:true,  scale:1,    unit:''},
+            2528: {name:'re_tentative_2528',       signed:true,  scale:1,    unit:''},
+            2529: {name:'re_tentative_2529',       signed:true,  scale:1,    unit:''},
+            2530: {name:'re_tentative_2530',       signed:true,  scale:1,    unit:''},
+            2531: {name:'re_tentative_2531',       signed:true,  scale:1,    unit:''},
+            2532: {name:'re_tentative_2532',       signed:true,  scale:1,    unit:''},
+            2627: {name:'rtc_hour',                signed:false, scale:1,    unit:'h'},
+            2628: {name:'rtc_minute',              signed:false, scale:1,    unit:'min'},
+            2629: {name:'rtc_second',              signed:false, scale:1,    unit:'s'},
+            2630: {name:'rtc_year',                signed:false, scale:1,    unit:''},
+            2631: {name:'rtc_month',               signed:false, scale:1,    unit:''},
+            2632: {name:'rtc_day',                 signed:false, scale:1,    unit:''},
+            2761: {name:'constant_power_command',  signed:true,  scale:0.1,  unit:'kW'},
+            2765: {name:'grid_connected_mode',     signed:false, scale:1,    unit:'enum'},
+            2768: {name:'power_control_type',      signed:false, scale:1,    unit:'enum'},
+            2769: {name:'remote_on_off',           signed:false, scale:1,    unit:'cmd'},
+            2770: {name:'control_mode',            signed:false, scale:1,    unit:'enum'},
+            2776: {name:'charge_power_limit',      signed:false, scale:1,    unit:'kW'},
+            2777: {name:'discharge_power_limit',   signed:false, scale:1,    unit:'kW'},
+            2778: {name:'work_mode',               signed:false, scale:1,    unit:'enum'},
+            2783: {name:'charge_stop_soc',         signed:false, scale:1,    unit:'%'},
+            2784: {name:'discharge_stop_soc',      signed:false, scale:1,    unit:'%'},
+        };
+
+        function resolveKnown(requestedAddr, wireAddr, offset) {
+            const candidates = [
+                requestedAddr,
+                wireAddr,
+                requestedAddr - offset,
+                wireAddr - offset,
+            ].filter(v => Number.isFinite(v));
+
+            const seen = new Set();
+            for (const docAddr of candidates) {
+                const normalized = Number(docAddr);
+                if (seen.has(normalized)) {
+                    continue;
+                }
+                seen.add(normalized);
+                const reg = KNOWN_REGISTERS[normalized];
+                if (reg) {
+                    return Object.assign({docAddr: normalized}, reg);
+                }
+            }
+            return null;
+        }
+
+        function displayResults(data) {
+            const results = data.results || {};
+            const offset = data.address_offset || 0;
+            const addresses = Object.keys(results).map(Number).sort((a, b) => a - b);
+            const successfulAddresses = addresses.filter(addr => results[addr] && results[addr].success);
+
+            const successful = successfulAddresses.length;
+            const failed = addresses.length - successful;
+
+            let html = '';
+            html += '<div class="stats">';
+            html += '<div class="stat-box"><div class="stat-label">Total</div><div class="stat-value">' + addresses.length + '</div></div>';
+            html += '<div class="stat-box"><div class="stat-label">✓ Success</div><div class="stat-value" style="color: #28a745;">' + successful + '</div></div>';
+            html += '<div class="stat-box"><div class="stat-label">✗ Failed</div><div class="stat-value" style="color: #dc3545;">' + failed + '</div></div>';
+            html += '</div>';
+
+            html += '<div class="success-msg">Scan completed for ' + data.device.toUpperCase() + ' (' + data.reg_type + ' registers) | Offset: ' + offset + '</div>';
+
+            if (successful > 0) {
+                html += '<table class="results-table">';
+                html += '<thead><tr><th>Requested Addr</th><th>Wire Addr</th><th>Doc Addr</th><th>U16</th><th>S16</th><th>Known Register</th><th>Scaled Value</th></tr></thead>';
+                html += '<tbody>';
+
+                successfulAddresses.forEach(addr => {
+                    const result = results[addr];
+                    const requestedAddr = Number(result.requested_address ?? addr);
+                    const wireAddr = Number(result.wire_address ?? requestedAddr);
+                    const u16 = result.u16;
+                    const s16 = result.s16;
+                    const known = resolveKnown(requestedAddr, wireAddr, offset);
+                    const docAddr = known ? known.docAddr : requestedAddr;
+
+                    let knownCell = '';
+                    let scaledCell = '';
+                    if (known) {
+                        knownCell = '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.85em;font-weight:600;">' + known.name + '</span>';
+                        const rawVal = known.signed ? s16 : u16;
+                        const scaled = (known.scale === 1) ? rawVal : Math.round(rawVal * known.scale * 1000) / 1000;
+                        const unitStr = known.unit ? ' ' + known.unit : '';
+                        scaledCell = '<strong style="color:#0056b3;">' + scaled + unitStr + '</strong>';
+                    }
+
+                    const rowBg = known ? ' style="background:#f0faf2;"' : '';
+                    html += '<tr' + rowBg + '>';
+                    html += '<td><strong>' + requestedAddr + '</strong></td>';
+                    html += '<td style="color:#666;">' + wireAddr + '</td>';
+                    html += '<td style="color:#666;">' + docAddr + '</td>';
+                    html += '<td>' + u16 + '</td>';
+                    html += '<td>' + s16 + '</td>';
+                    html += '<td>' + knownCell + '</td>';
+                    html += '<td>' + scaledCell + '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+            } else {
+                html += '<div class="error">No readable registers found in this range.</div>';
+            }
+
+            if (successful > 0) {
+                html += '<div style="margin-top:15px;padding:10px;background:#f0f0f0;border-radius:4px;">';
+                html += '<p><strong>Working wire addresses:</strong></p>';
+                html += '<code style="display:block;padding:10px;background:white;border-radius:4px;overflow-x:auto;">';
+                html += successfulAddresses.join(', ');
+                html += '</code></div>';
+
+                html += buildCandidateMapHtml(data, addresses, results);
+            }
+
+            document.getElementById('results').innerHTML = html;
+        }
+
+        function showLoading(message) {
+            let html = '<div class="loading">';
+            html += '<div class="spinner"></div>';
+            html += '<p>' + message + '</p>';
+            html += '</div>';
+            document.getElementById('statusArea').innerHTML = html;
+        }
+
+        function showError(message) {
+            document.getElementById('statusArea').innerHTML = '<div class="error">' + message + '</div>';
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('statusArea').innerHTML = '';
+        }
+    </script>
+</body>
+</html>

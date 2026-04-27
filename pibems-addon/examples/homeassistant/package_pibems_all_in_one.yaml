@@ -1,0 +1,96 @@
+# PIBEMS all-in-one Home Assistant package
+# Drop this file into /config/packages/ on your Home Assistant instance.
+# Requires in configuration.yaml:
+# homeassistant:
+#   packages: !include_dir_named packages
+
+rest:
+  - resource: http://127.0.0.1:8080/api/diagnostics
+    scan_interval: 2
+    sensor:
+      - name: PIBEMS Huawei Connection Status
+        unique_id: pibems_huawei_connection_status
+        value_template: "{{ 'connected' if value_json.status.huawei_connected else 'disconnected' }}"
+      - name: PIBEMS Huawei Last Error
+        unique_id: pibems_huawei_last_error
+        value_template: "{{ value_json.status.huawei_last_error | default('none') }}"
+      - name: PIBEMS PCS Connection Status
+        unique_id: pibems_pcs_connection_status
+        value_template: "{{ 'connected' if value_json.status.pcs_connected else 'disconnected' }}"
+      - name: PIBEMS PCS Last Error
+        unique_id: pibems_pcs_last_error
+        value_template: "{{ value_json.status.pcs_last_error | default('none') }}"
+      - name: PIBEMS PCS SOC
+        unique_id: pibems_pcs_soc
+        value_template: "{{ value_json.pcs.soc | default(0) }}"
+        unit_of_measurement: "%"
+      - name: PIBEMS PCS Active Power
+        unique_id: pibems_pcs_load_active_kw
+        value_template: "{{ value_json.pcs.load_active_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS PCS Meter Total Power
+        unique_id: pibems_pcs_meter_total_power_kw
+        value_template: "{{ value_json.pcs.total_power_meter_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Huawei Active Power
+        unique_id: pibems_huawei_active_kw
+        value_template: "{{ value_json.huawei.active_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Effective Target Power
+        unique_id: pibems_effective_target_power_kw
+        value_template: "{{ value_json.control.effective_target_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+      - name: PIBEMS Last Written PCS Power
+        unique_id: pibems_last_written_pcs_power_kw
+        value_template: "{{ value_json.control.last_written_pcs_power_kw | default(0) }}"
+        unit_of_measurement: "kW"
+
+template:
+  - sensor:
+      - name: PIBEMS Card Grid Power
+        unique_id: pibems_card_grid_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_pcs_meter_total_power') %}
+          {% set b = states('sensor.pibems_pcs_meter_total_power_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card PCS Power
+        unique_id: pibems_card_pcs_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_pcs_active_power') %}
+          {% set b = states('sensor.pibems_pcs_load_active_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card Battery Power
+        unique_id: pibems_card_battery_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_last_written_pcs_power') %}
+          {% set b = states('sensor.pibems_last_written_pcs_power_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card PV Power
+        unique_id: pibems_card_pv_power_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_huawei_active_power') %}
+          {% set b = states('sensor.pibems_huawei_active_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card SOC
+        unique_id: pibems_card_soc_percent
+        unit_of_measurement: "%"
+        state: >-
+          {% set a = states('sensor.pibems_pcs_soc') %}
+          {% set b = states('sensor.pibems_soc') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}
+
+      - name: PIBEMS Card EMS Target
+        unique_id: pibems_card_effective_target_kw
+        unit_of_measurement: kW
+        state: >-
+          {% set a = states('sensor.pibems_effective_target_power') %}
+          {% set b = states('sensor.pibems_effective_target_power_kw') %}
+          {{ (a if a not in ['unknown','unavailable','none','None',''] else b) | float(0) }}

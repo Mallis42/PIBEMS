@@ -11,7 +11,7 @@ This repository contains a custom Home Assistant add-on for PIBEMS.
 1. In Home Assistant, go to **Settings -> Add-ons -> Add-on Store**.
 2. Open the top-right menu and select **Repositories**.
 3. Add this GitHub URL:
-   - `https://github.com/YOUR_GITHUB_USERNAME/pibems-ha-addons`
+   - `https://github.com/Mallis42/PIBEMS`
 4. Install the **PIBEMS** add-on from the store.
 
 ## First startup safety

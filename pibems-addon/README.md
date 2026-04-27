@@ -55,7 +55,13 @@ This scaffold provides a starting point for an open-source EMS add-on that can:
 - `Dockerfile`: add-on build
 - `requirements.txt`: Python dependencies
 - `config/register_map.yaml`: register definitions for Huawei, PCS, and EMS server defaults
-- `app/main.py`: EMS runtime service
+- `app/main.py`: EMS runtime service orchestration and control loops
+- `app/options.py`: add-on option defaults and config/register-map loading
+- `app/constants.py`: shared constants such as Huawei status decoding
+- `app/modbus_logging.py`: custom Modbus slave context used by the EMS server
+- `app/ui.py`: server-rendered dashboard/scanner helpers
+- `app/templates/dashboard.html`: dashboard page shell
+- `app/templates/scanner.html`: scanner page shell and browser logic
 - `examples/homeassistant/rest.yaml`: starter Home Assistant entities
 
 ## Notes on register addressing
